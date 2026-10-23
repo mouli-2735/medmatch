@@ -54,6 +54,17 @@ export default function App() {
   // 3D Parallax Tilt for Hero Tablet Card
   const [tiltStyle, setTiltStyle] = useState({});
   const [heroViewMode, setHeroViewMode] = useState('doctor'); // 'doctor' | 'tablet'
+  const [theme, setTheme] = useState('skyblue'); // 'skyblue' | 'dark'
+
+  React.useEffect(() => {
+    if (theme === 'dark') {
+      document.body.classList.add('theme-dark');
+      document.body.classList.remove('theme-skyblue');
+    } else {
+      document.body.classList.add('theme-skyblue');
+      document.body.classList.remove('theme-dark');
+    }
+  }, [theme]);
 
   const fileInputRef = useRef(null);
   const heroCardRef = useRef(null);
@@ -317,8 +328,8 @@ export default function App() {
       {/* Top Clinical Workstation Header with Animated ECG Pulse */}
       <header
         style={{
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(7, 11, 22, 0.92)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.14)',
+          background: theme === 'dark' ? 'rgba(7, 11, 22, 0.92)' : 'rgba(8, 22, 45, 0.88)',
           backdropFilter: 'blur(20px)',
           position: 'sticky',
           top: 0,
@@ -404,6 +415,26 @@ export default function App() {
               <span className="pulse-dot" style={{ background: '#10b981' }} />
               <span>NLEM 2022 CATALOG (91 DRUGS)</span>
             </div>
+
+            {/* Theme Toggle Button */}
+            <button
+              className="glass-pill"
+              onClick={() => setTheme(theme === 'skyblue' ? 'dark' : 'skyblue')}
+              style={{
+                cursor: 'pointer',
+                padding: '6px 14px',
+                borderColor: theme === 'skyblue' ? 'rgba(56, 189, 248, 0.45)' : 'rgba(255, 255, 255, 0.15)',
+                color: theme === 'skyblue' ? '#38bdf8' : '#cbd5e1',
+                fontWeight: 700,
+                fontSize: '0.76rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+              title="Switch between Sky Blue and Dark Midnight theme"
+            >
+              <span>{theme === 'skyblue' ? '☀️ Sky Blue' : '🌙 Dark Mode'}</span>
+            </button>
 
 
 
