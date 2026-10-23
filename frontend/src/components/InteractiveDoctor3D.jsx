@@ -19,7 +19,6 @@ export default function InteractiveDoctor3D({
   processingStage,
   hoveredLineId,
   onUploadClick,
-  onLoadSampleClick,
   compact = false
 }) {
   const mountRef = useRef(null);
@@ -121,7 +120,7 @@ export default function InteractiveDoctor3D({
         }
       }
     } else {
-      text = "Welcome to MedMatch Rx! I'm Dr. Alex. Select a clinical test case or drop your script to begin.";
+      text = "Welcome to MedMatch Rx! I'm Dr. Alex. Drop your prescription to begin clinical verification.";
       setCurrentPose('idle');
       tabletTitle = "READY FOR SCRIPT";
       tabletState = "STANDBY";
@@ -1106,15 +1105,15 @@ export default function InteractiveDoctor3D({
           </button>
         </div>
 
-        {/* Quick Sample / Upload trigger on Doctor's tablet */}
+        {/* Upload Prescription trigger on Doctor's tablet */}
         <div style={{ display: 'flex', gap: 6 }}>
-          {onLoadSampleClick && (
+          {onUploadClick && (
             <button
               className="btn btn-primary"
               style={{ padding: '6px 14px', fontSize: '0.76rem', borderRadius: 9999 }}
-              onClick={onLoadSampleClick}
+              onClick={onUploadClick}
             >
-              <Sparkles size={13} /> Load Sample Script
+              <FileText size={13} /> Select Prescription
             </button>
           )}
         </div>

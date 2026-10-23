@@ -20,7 +20,7 @@ export default function DoctorAvatarAssistant({
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const [activeSpeech, setActiveSpeech] = useState(
-    "Hello! I'm Dr. Alex, your AI Clinical Pharmacist. Drag any handwritten prescription onto the desk or choose a clinical test case to begin!"
+    "Hello! I'm Dr. Alex, your AI Clinical Pharmacist. Drag any handwritten prescription onto the desk to begin analysis!"
   );
   const [showConsultModal, setShowConsultModal] = useState(false);
   const [consultQuestion, setConsultQuestion] = useState(null);
@@ -76,7 +76,7 @@ export default function DoctorAvatarAssistant({
       }
     } else {
       setActiveSpeech(
-        "Welcome to MedMatch Rx! I'm Dr. Alex. Drop any handwritten prescription onto the desk or select a test case to begin."
+        "Welcome to MedMatch Rx! I'm Dr. Alex. Drop any handwritten prescription onto the desk to begin analysis."
       );
     }
   }, [loading, processingStage, activePrescription, hoveredLineId]);

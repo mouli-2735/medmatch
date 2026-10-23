@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
-  ShieldCheck,
   AlertTriangle,
   Upload,
   Camera,
@@ -9,33 +8,18 @@ import {
   XCircle,
   FileText,
   RefreshCw,
-  Search,
   ArrowRightLeft,
   Pencil,
   Lock,
   Unlock,
   AlertOctagon,
-  ChevronDown,
   Sparkles,
-  Layers,
   ZoomIn,
   ZoomOut,
   RotateCw,
-  Sliders,
-  Check,
   X,
   Stethoscope,
-  ClipboardCheck,
-  Eye,
   History,
-  Activity,
-  Filter,
-  CheckCheck,
-  Maximize2,
-  HeartPulse,
-  Award,
-  Sparkle,
-  Compass,
   Target,
   Smile
 } from 'lucide-react';
@@ -47,16 +31,13 @@ import InteractiveDoctor3D from './components/InteractiveDoctor3D';
 const API_BASE = '';
 
 export default function App() {
-  const [samples, setSamples] = useState([]);
   const [activePrescription, setActivePrescription] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [editingLineId, setEditingLineId] = useState(null);
   const [customForm, setCustomForm] = useState({ drug: '', dose: '', freq: '', duration: '', notes: '' });
   const [searchResults, setSearchResults] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedCropPreview, setSelectedCropPreview] = useState(null);
-  const [showCaseDropdown, setShowCaseDropdown] = useState(false);
   const [showDispenseModal, setShowDispenseModal] = useState(false);
   const [showAuditDrawer, setShowAuditDrawer] = useState(false);
   const [processingStage, setProcessingStage] = useState('Analyzing optical quality...');
@@ -74,32 +55,7 @@ export default function App() {
   const [heroViewMode, setHeroViewMode] = useState('doctor'); // 'doctor' | 'tablet'
 
   const fileInputRef = useRef(null);
-  const dropdownRef = useRef(null);
   const heroCardRef = useRef(null);
-
-  const fetchSamples = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/sample-prescriptions`);
-      if (res.ok) {
-        const data = await res.json();
-        setSamples(data);
-      }
-    } catch (e) {
-      console.error('Error fetching clinical cases:', e);
-    }
-  };
-
-  useEffect(() => {
-    fetchSamples();
-    
-    const handleOutsideClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowCaseDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
 
   const handleHeroMouseMove = (e) => {
     if (!heroCardRef.current) return;
@@ -166,29 +122,7 @@ export default function App() {
     }
   };
 
-  const loadSample = async (sampleId) => {
-    setLoading(true);
-    setUploadError(null);
-    setShowCaseDropdown(false);
-    setZoomLevel(1);
-    setImageFilter('normal');
-    setImageRotation(0);
-    setProcessingStage('Loading clinical case file...');
 
-    try {
-      const res = await fetch(`${API_BASE}/api/sample-prescriptions/${sampleId}/load`, {
-        method: 'POST',
-      });
-      if (!res.ok) throw new Error('Failed to load clinical case');
-      const data = await res.json();
-      setActivePrescription(data);
-      logAuditEvent('Case Loaded', `Clinical case ${data.prescription_id} ingested for verification`);
-    } catch (e) {
-      setUploadError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const logAuditEvent = (action, detail) => {
     const entry = {
@@ -456,53 +390,7 @@ export default function App() {
               <span>NLEM 2022 CATALOG (91 DRUGS)</span>
             </div>
 
-            {/* Quick Test Case Loader Dropdown */}
-            <div style={{ position: 'relative' }} ref={dropdownRef}>
-              <button
-                className="btn btn-secondary"
-                style={{ padding: '8px 14px', fontSize: '0.82rem', gap: 6 }}
-                onClick={() => setShowCaseDropdown(!showCaseDropdown)}
-              >
-                <ClipboardCheck size={15} color="#06b6d4" />
-                <span>Load Test Case</span>
-                <ChevronDown size={14} color="var(--text-muted)" />
-              </button>
 
-              {showCaseDropdown && (
-                <div className="dropdown-menu">
-                  <div style={{ padding: '10px 16px', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Select Clinical Scenario
-                  </div>
-                  {samples.map((s) => (
-                    <div
-                      key={s.id}
-                      className="dropdown-item"
-                      onClick={() => loadSample(s.id)}
-                    >
-                      <div>
-                        <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#f8fafc' }}>{s.name}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.description}</div>
-                      </div>
-                      <span
-                        className="badge-tag"
-                        style={{
-                          background:
-                            s.category === 'clean' ? 'rgba(16, 185, 129, 0.2)' :
-                            s.category === 'lookalike' ? 'rgba(239, 68, 68, 0.2)' :
-                            s.category === 'messy' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(148, 163, 184, 0.2)',
-                          color:
-                            s.category === 'clean' ? '#34d399' :
-                            s.category === 'lookalike' ? '#f87171' :
-                            s.category === 'messy' ? '#fbbf24' : '#94a3b8',
-                        }}
-                      >
-                        {s.category}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
             {/* Audit Trail Drawer Toggle */}
             <button
@@ -617,7 +505,6 @@ export default function App() {
                       processingStage={processingStage}
                       hoveredLineId={hoveredLineId}
                       onUploadClick={() => fileInputRef.current?.click()}
-                      onLoadSampleClick={() => loadSample('rx_001')}
                     />
                   </div>
                 ) : (
@@ -709,24 +596,17 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                   <button
                     className="btn btn-primary"
-                    style={{ padding: '12px 26px', fontSize: '0.92rem' }}
+                    style={{ padding: '12px 28px', fontSize: '0.94rem' }}
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload size={18} /> Ingest Prescription
                   </button>
                   <button
                     className="btn btn-secondary"
-                    style={{ padding: '12px 22px', fontSize: '0.92rem' }}
-                    onClick={() => loadSample('rx_001')}
+                    style={{ padding: '12px 24px', fontSize: '0.94rem' }}
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    <ClipboardCheck size={18} color="#06b6d4" /> Run Clean Demo
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '12px 22px', fontSize: '0.92rem' }}
-                    onClick={() => loadSample('rx_006')}
-                  >
-                    <AlertOctagon size={18} color="#ef4444" /> Test LASA Hazard
+                    <Camera size={18} color="#06b6d4" /> Snap Photo
                   </button>
                 </div>
               </div>
