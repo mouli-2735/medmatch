@@ -656,11 +656,12 @@ export default function App() {
                             style={{ padding: '6px 12px', fontSize: '0.8rem' }}
                             onClick={() => {
                               setEditingLineId(line.line_id);
+                              const cleanVal = (v) => (!v || v.toLowerCase() === 'unreadable' || v.toLowerCase() === 'unknown') ? '' : v;
                               setCustomForm({
-                                drug: line.final_drug || line.selected_candidate?.brand_name || '',
-                                dose: line.final_dose || line.dose_raw || '',
-                                freq: line.final_freq || line.freq_raw || '',
-                                duration: line.final_duration || line.duration_raw || '',
+                                drug: cleanVal(line.final_drug || line.selected_candidate?.brand_name),
+                                dose: cleanVal(line.final_dose || line.dose_raw),
+                                freq: cleanVal(line.final_freq || line.freq_raw),
+                                duration: cleanVal(line.final_duration || line.duration_raw),
                                 notes: '',
                               });
                             }}

@@ -63,8 +63,8 @@ class MedMatchPipeline:
                 created_at=datetime.utcnow().isoformat()
             )
 
-        # 2. Deskew
-        deskewed_img, angle = self.quality_processor.deskew(image_bgr)
+        # 2. Auto-orient and Deskew
+        deskewed_img, angle = self.quality_processor.auto_orient_and_deskew(image_bgr)
         quality.deskew_angle = angle
 
         # 3. Line Segmentation or use pre-existing line definitions

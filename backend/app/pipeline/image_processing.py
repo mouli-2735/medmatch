@@ -97,66 +97,89 @@ class ImageQualityProcessor:
 
         return image_bgr, 0.0
 
+    def auto_orient_and_deskew(self, image_bgr: np.ndarray) -> Tuple[np.ndarray, float]:
+        """
+        Detects if photo was taken in landscape mode for a portrait pad (w > h * 1.15)
+        and rotates 90 degrees clockwise, then applies subtle deskewing.
+        """
+        h, w = image_bgr.shape[:2]
+        total_angle = 0.0
+        oriented = image_bgr
+
+        if w > h * 1.15:
+            oriented = cv2.rotate(image_bgr, cv2.ROTATE_90_CLOCKWISE)
+            total_angle += 90.0
+
+        deskewed, d_angle = self.deskew(oriented)
+        total_angle += d_angle
+        return deskewed, round(total_angle, 2)
+
     def segment_lines(self, image_bgr: np.ndarray, output_dir: Path, prefix: str) -> List[Tuple[str, List[int]]]:
         """
-        Cuts prescription image into horizontal line crops using horizontal projection profile.
-        Saves each crop and returns list of (crop_filename, [x1, y1, x2, y2]).
+        Cuts prescription image into individual horizontal line crops.
+        Uses adaptive Gaussian thresholding, horizontal morphological closing,
+        and vertical line clustering to handle real mobile photos with shadows/margins.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         h, w = image_bgr.shape[:2]
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
 
-        # Skip top header area (first 180px) and bottom signature area (last 100px)
-        roi_y_start = min(180, int(h * 0.18))
-        roi_y_end = max(h - 100, int(h * 0.88))
-        
-        roi_gray = gray[roi_y_start:roi_y_end, :]
-        thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        # Adaptive thresholding to isolate ink despite non-uniform lighting
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)
 
-        # Horizontal projection: count of ink pixels across each row
-        proj = np.sum(thresh > 0, axis=1)
-        
-        # Smooth projection
-        kernel_size = 15
-        kernel = np.ones(kernel_size) / kernel_size
-        smooth_proj = np.convolve(proj, kernel, mode="same")
-        
-        ink_threshold = np.mean(smooth_proj) * 0.25
-        is_ink = smooth_proj > ink_threshold
-        
-        # Find continuous ink segments
-        segments = []
-        in_segment = False
-        start_y = 0
-        
-        for y, val in enumerate(is_ink):
-            if val and not in_segment:
-                in_segment = True
-                start_y = y
-            elif not val and in_segment:
-                in_segment = False
-                if (y - start_y) >= 20: # Minimum line height
-                    segments.append((start_y, y))
-                    
-        if in_segment and (len(is_ink) - start_y) >= 20:
-            segments.append((start_y, len(is_ink)))
+        # Horizontal structuring element to bridge words across a line
+        k_w = max(15, int(w * 0.04))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k_w, 4))
+        dilated = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-        # If projection didn't find clear lines, fallback to equal vertical slicing
-        if not segments:
+        # Mask top 15% (header/clinic banner) and bottom 8% (signature)
+        y_start = int(h * 0.15)
+        y_end = int(h * 0.90)
+        dilated[:y_start, :] = 0
+        dilated[y_end:, :] = 0
+        dilated[:, :int(w * 0.04)] = 0
+        dilated[:, int(w * 0.96):] = 0
+
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        boxes = []
+        for c in contours:
+            x, y, bw, bh = cv2.boundingRect(c)
+            # Filter noise dots or giant full-page boxes
+            if bw > int(w * 0.10) and 15 < bh < int(h * 0.22):
+                boxes.append([x, y, x + bw, y + bh])
+
+        # Cluster boxes by Y position into discrete lines
+        boxes.sort(key=lambda b: b[1])
+        clustered_lines = []
+        for b in boxes:
+            if not clustered_lines or (b[1] - clustered_lines[-1][1]) > int(h * 0.032):
+                clustered_lines.append(b)
+            else:
+                # Merge into existing line
+                clustered_lines[-1][0] = min(clustered_lines[-1][0], b[0])
+                clustered_lines[-1][1] = min(clustered_lines[-1][1], b[1])
+                clustered_lines[-1][2] = max(clustered_lines[-1][2], b[2])
+                clustered_lines[-1][3] = max(clustered_lines[-1][3], b[3])
+
+        # Fallback if no contours found
+        if not clustered_lines:
             num_fallback_lines = 3
-            slice_h = (roi_y_end - roi_y_start) // num_fallback_lines
+            slice_h = (y_end - y_start) // num_fallback_lines
             for i in range(num_fallback_lines):
-                segments.append((i * slice_h, (i + 1) * slice_h))
+                clustered_lines.append([int(w * 0.05), y_start + i * slice_h, int(w * 0.95), y_start + (i + 1) * slice_h])
+
+        # Cap at top 8 most distinct lines
+        clustered_lines = clustered_lines[:8]
 
         line_crops = []
-        for idx, (seg_start, seg_end) in enumerate(segments):
+        for idx, bbox in enumerate(clustered_lines):
             line_num = idx + 1
-            # Add padding
-            pad_y = 12
-            y1 = max(0, roi_y_start + seg_start - pad_y)
-            y2 = min(h, roi_y_start + seg_end + pad_y)
-            x1 = int(w * 0.05)
-            x2 = int(w * 0.95)
+            pad_y = 8
+            pad_x = 10
+            x1 = max(0, bbox[0] - pad_x)
+            y1 = max(0, bbox[1] - pad_y)
+            x2 = min(w, bbox[2] + pad_x)
+            y2 = min(h, bbox[3] + pad_y)
 
             crop = image_bgr[y1:y2, x1:x2]
             crop_name = f"{prefix}_line_{line_num}.png"
@@ -165,3 +188,4 @@ class ImageQualityProcessor:
             line_crops.append((crop_name, [x1, y1, x2, y2]))
 
         return line_crops
+
