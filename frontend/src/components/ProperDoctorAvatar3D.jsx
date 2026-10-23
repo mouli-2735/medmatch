@@ -74,7 +74,7 @@ export default function ProperDoctorAvatar3D({
               text = `Line #${l.line_id}: Cursive characters ambiguous (${l.confidence?.score}%). Pharmacist confirmation needed.`;
               setActivePose('inspect');
             } else {
-              text = `Line #${l.line_id}: ${l.selected_candidate?.brand_name} verified against NLEM standards.`;
+              text = `Line #${l.line_id}: ${l.selected_candidate?.brand_name} matched against NLEM standards.`;
               setActivePose('approve');
             }
           }
@@ -85,12 +85,12 @@ export default function ProperDoctorAvatar3D({
           text = `Prescription ingested: ${redLines.length} red-flagged cursive line(s) require clinical sign-off.`;
           setActivePose('inspect');
         } else {
-          text = `Excellent! All prescription lines are verified and ready for digital dispense!`;
+          text = `All prescription lines reviewed and ready for pharmacist sign-off!`;
           setActivePose('approve');
         }
       }
     } else {
-      text = "Welcome to MedMatch Rx! I'm Dr. Alex. Drop your prescription to begin clinical verification.";
+      text = "Welcome to MedMatch Rx! I'm Dr. Alex. Drop your prescription to begin pharmacist review assistance.";
       setActivePose('ready');
     }
 

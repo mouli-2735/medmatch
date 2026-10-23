@@ -583,7 +583,7 @@ export default function App() {
                 </h2>
 
                 <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 24 }}>
-                  Turn illegible doctor handwriting into standardized, error-free clinical orders. Cross-checked against 91 NLEM essential medicines and verified against high-risk Look-Alike Sound-Alike confusion hazards in real time.
+                  Assists pharmacists in transcribing and standardizing handwritten prescriptions into structured digital orders. Cross-checked against 91 NLEM essential medicines and flagged for high-risk Look-Alike Sound-Alike confusion hazards in real time — the tool assists, while final clinical judgment remains with the pharmacist.
                 </p>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -1023,7 +1023,7 @@ export default function App() {
                     }}
                   >
                     <CheckCircle2 size={15} color="#34d399" />
-                    <span>All {totalLines} Lines Clinically Verified</span>
+                    <span>All {totalLines} Lines Confirmed by Pharmacist</span>
                   </div>
                 )}
 
@@ -1541,7 +1541,7 @@ export default function App() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                                 {line.rxnorm.match_type === 'exact' ? (
                                   <span
-                                    title="Verified against US NLM RxNorm live API (Exact match)"
+                                    title="Matched in US NLM RxNorm live API (Exact match)"
                                     style={{
                                       display: 'inline-flex',
                                       alignItems: 'center',
@@ -1555,7 +1555,7 @@ export default function App() {
                                       color: '#34d399',
                                     }}
                                   >
-                                    <CheckCircle2 size={12} /> NLM RxNorm Verified (Exact)
+                                    <CheckCircle2 size={12} /> NLM RxNorm Match (Exact)
                                   </span>
                                 ) : line.rxnorm.match_type === 'approximate' ? (
                                   <span
@@ -2172,7 +2172,7 @@ export default function App() {
                 <CheckCircle2 size={40} />
               </div>
               <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f8fafc' }}>
-                Prescription Verified & Approved for Dispense
+                Prescription Confirmed & Approved for Dispense
               </h3>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginTop: 4 }}>
                 All medication lines have passed clinical safety checks and look-alike verification.
@@ -2196,7 +2196,7 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: '0.82rem' }}>
                 <span style={{ color: 'var(--text-sub)' }}>Approved Lines:</span>
-                <span style={{ color: '#10b981', fontWeight: 700 }}>{activePrescription?.lines?.length} of {activePrescription?.lines?.length} Verified</span>
+                <span style={{ color: '#10b981', fontWeight: 700 }}>{activePrescription?.lines?.length} of {activePrescription?.lines?.length} Confirmed</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                 <span style={{ color: 'var(--text-sub)' }}>Pharmacist Signature:</span>
@@ -2255,7 +2255,7 @@ export default function App() {
           zIndex: 10,
         }}
       >
-        MedMatch Rx™ · Hospital Clinical Pharmacist Ingestion Workstation · NLEM Pharmacopeia Verified · Real-Time LASA Prevention
+        MedMatch Rx™ · Hospital Clinical Pharmacist Ingestion Workstation · NLEM Pharmacopeia Matched · Real-Time LASA Prevention
       </footer>
     </div>
   );

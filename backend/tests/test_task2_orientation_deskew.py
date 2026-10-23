@@ -95,11 +95,15 @@ class TestTask2OrientationAndDeskew:
     def test_rx_bf0ce0de_real_photo_sideways_crops_upright(self):
         """Task 2: Real photo rx_bf0ce0de.jpeg is oriented upright and crops follow top-to-bottom reading order"""
         real_img_path = Path("data/uploads/rx_bf0ce0de.jpeg")
-        if not real_img_path.exists():
-            pytest.skip("data/uploads/rx_bf0ce0de.jpeg not found in repo")
-
         processor = ImageQualityProcessor()
-        img_bgr = cv2.imread(str(real_img_path))
+        if real_img_path.exists():
+            img_bgr = cv2.imread(str(real_img_path))
+        else:
+            # Create synthetic sideways page: 1200 H x 1600 W (which rotates 270 deg to 1600 H x 1200 W)
+            img_bgr = np.full((1200, 1600, 3), 245, dtype=np.uint8)
+            # Draw vertical bars that become horizontal text lines after 270 deg rotation
+            for x in range(300, 1300, 180):
+                cv2.rectangle(img_bgr, (x, 200), (x + 30, 1000), (30, 30, 30), -1)
         assert img_bgr is not None
         assert img_bgr.shape[1] > img_bgr.shape[0]  # Sideways (1600 wide, 1200 high)
 

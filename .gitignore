@@ -10,7 +10,15 @@ __pycache__/
 *.sqlite
 *.db
 
-# Node
+# Archives & Temporary files
+*.zip
+*.tar.gz
+uploads/
+backend/data/uploads/
+backend/data/test_crops_*/
+backend/data/crops/
+
+# Node & Frontend Build
 node_modules/
 dist/
 build/
@@ -21,3 +29,4 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+.pytest_cache/
