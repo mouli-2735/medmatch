@@ -1,8 +1,9 @@
+import asyncio
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import cv2
 import numpy as np
 
@@ -12,16 +13,29 @@ from app.pipeline.schema import (
     PrescriptionResponse,
     QualityCheckResult,
     GeminiLineOutput,
-    AgreedPipelineData,
-    LineCropData
+    LineCropData,
+    RxNormLookupResult
 )
 from app.pipeline.image_processing import ImageQualityProcessor
 from app.pipeline.ocr import GeminiOCRReader
 from app.pipeline.matcher import DrugCatalogMatcher
 from app.pipeline.validator import PrescriptionValidator
 from app.pipeline.confidence import ConfidenceEvaluator, LookalikeChecker
+from app.pipeline.rxnorm import RxNormClient
 
 class MedMatchPipeline:
+    """
+    End-to-end execution of MedMatch Rx prescription verification pipeline.
+    Integrates all seven project technologies + live RxNorm reference:
+    1. OpenCV — Image quality analysis, auto-orientation, deskewing, and line segmentation.
+    2. Vision AI (Gemini) — Handwritten prescription line transcription.
+    3. RapidFuzz — Orthographic medicine name similarity comparison.
+    4. Metaphone — Phonetic sound-alike similarity comparison.
+    5. ISMP LASA — Look-Alike / Sound-Alike clinical safety hazard detection.
+    6. FastAPI — Orchestration & async endpoint handling.
+    7. SQLite — Audit records, pharmacist confirmations, and corrections.
+    + RxNorm API — Live online medicine-name reference lookup via NLM RxNav.
+    """
     def __init__(self):
         self.quality_processor = ImageQualityProcessor()
         self.ocr_reader = GeminiOCRReader()
@@ -29,27 +43,57 @@ class MedMatchPipeline:
         self.validator = PrescriptionValidator()
         self.confidence_evaluator = ConfidenceEvaluator()
         self.lookalike_checker = LookalikeChecker()
+        self.rxnorm_client = RxNormClient()
 
-    def process_prescription_image(
+    async def process_prescription_image(
         self,
         image_path: Path,
         prescription_id: Optional[str] = None,
-        pre_existing_lines: Optional[List[dict]] = None
+        allow_demo_fallback: bool = False
     ) -> PrescriptionResponse:
         """
-        End-to-end execution of MedMatch Rx processing pipeline on an uploaded image:
-        1. Image quality inspection (blur, dark, glare)
-        2. Image deskewing
-        3. Line segmentation
-        4. Gemini OCR reading
-        5. RapidFuzz & phonetic matching
-        6. Clinical validation
-        7. Rule-based confidence scoring & look-alike safety alerts
+        Executes pipeline on an uploaded image without hardcoded demo shortcuts:
+        1. OpenCV Image Quality Analysis (blur, dark, glare)
+        2. OpenCV Auto-orient and Deskew
+        3. OpenCV Line Segmentation
+        4. Vision AI OCR (real multimodal reading)
+        5. RapidFuzz & Metaphone local catalog matching
+        6. Live RxNorm online reference lookup
+        7. Clinical validation of dose, frequency, and duration
+        8. ISMP Look-alike safety check
+        9. Heuristic field-level confidence scoring
         """
         pid = prescription_id or f"rx_{uuid.uuid4().hex[:8]}"
         image_bgr = cv2.imread(str(image_path))
         
-        # 1. Image Quality Check
+        if image_bgr is None:
+            # Handle unreadable image file safely
+            failed_qc = QualityCheckResult(
+                passed=False,
+                is_blurry=False,
+                blur_score=0.0,
+                is_dark=False,
+                mean_brightness=0.0,
+                has_glare=False,
+                glare_share=0.0,
+                message="Image file could not be read or is corrupted. Please re-upload.",
+                deskew_angle=0.0
+            )
+            return PrescriptionResponse(
+                prescription_id=pid,
+                original_filename=image_path.name,
+                image_url=f"/static/uploads/{image_path.name}",
+                quality_check=failed_qc,
+                lines=[],
+                total_lines=0,
+                status="rejected",
+                all_can_confirm=False,
+                vision_ai_status="error",
+                vision_ai_message="Invalid image file format or corrupt image.",
+                created_at=datetime.now(timezone.utc).isoformat()
+            )
+
+        # 1. OpenCV Image Quality Check
         quality = self.quality_processor.analyze_quality(image_bgr)
         if not quality.passed:
             return PrescriptionResponse(
@@ -59,61 +103,123 @@ class MedMatchPipeline:
                 quality_check=quality,
                 lines=[],
                 total_lines=0,
+                status="rejected",
                 all_can_confirm=False,
-                created_at=datetime.utcnow().isoformat()
+                vision_ai_status="operational",
+                vision_ai_message="Image rejected by OpenCV quality gate.",
+                created_at=datetime.now(timezone.utc).isoformat()
             )
 
-        # 2. Auto-orient and Deskew
+        # 2. OpenCV Auto-orient and Deskew
         deskewed_img, angle = self.quality_processor.auto_orient_and_deskew(image_bgr)
         quality.deskew_angle = angle
 
-        # 3. Line Segmentation or use pre-existing line definitions
+        # 3. Vision AI Single-Page OCR or OpenCV Segmentation Fallback
         crops_out_dir = CROPS_DIR / pid
         crops_out_dir.mkdir(parents=True, exist_ok=True)
-        
-        line_specs = []
-        if pre_existing_lines:
-            # When evaluating known benchmarks with existing crops
-            for item in pre_existing_lines:
-                crop_name = item.get("crop", "")
-                bbox = item.get("bbox", [50, 50, 700, 150])
-                line_specs.append((crop_name, bbox, item))
-        else:
-            # Segment dynamically from image
-            segmented = self.quality_processor.segment_lines(deskewed_img, crops_out_dir, pid)
-            for crop_name, bbox in segmented:
-                line_specs.append((crop_name, bbox, None))
 
-        # 4, 5, 6, 7: Process each line item
+        # Encode deskewed image to JPEG bytes for page-level Vision AI
+        success_enc, encoded = cv2.imencode(".jpg", deskewed_img)
+        page_bytes = encoded.tobytes() if success_enc else b""
+
+        page_output = self.ocr_reader.read_prescription_page(
+            page_bytes,
+            allow_demo_fallback=allow_demo_fallback,
+            image_id=pid or image_path.stem
+        )
+
+        overall_vision_status = "operational"
+        overall_vision_msg = None
+        if page_output.is_service_error:
+            overall_vision_status = "service_unavailable"
+            overall_vision_msg = page_output.service_error_detail
+
+        h_img, w_img = deskewed_img.shape[:2]
+        usable_entries = [
+            e for e in (page_output.prescriptions or [])
+            if e.bbox and len(e.bbox) == 4 and (e.bbox[2] > e.bbox[0]) and (e.bbox[3] > e.bbox[1])
+        ]
+
+        line_items: List[Tuple[str, List[int], GeminiLineOutput]] = []
+
+        if usable_entries:
+            # Build crops directly from Vision AI bboxes (clamped, padded)
+            for idx, entry in enumerate(usable_entries):
+                line_num = idx + 1
+                ymin, xmin, ymax, xmax = entry.bbox
+                # Scale from normalized [0, 1000] scale if needed, or if already in pixel coords
+                if ymax <= 1000 and xmax <= 1000:
+                    y1 = max(0, int((ymin / 1000.0) * h_img) - 8)
+                    x1 = max(0, int((xmin / 1000.0) * w_img) - 10)
+                    y2 = min(h_img, int((ymax / 1000.0) * h_img) + 8)
+                    x2 = min(w_img, int((xmax / 1000.0) * w_img) + 10)
+                else:
+                    y1 = max(0, int(ymin) - 8)
+                    x1 = max(0, int(xmin) - 10)
+                    y2 = min(h_img, int(ymax) + 8)
+                    x2 = min(w_img, int(xmax) + 10)
+
+                if y2 - y1 < 10 or x2 - x1 < 10:
+                    continue
+
+                crop = deskewed_img[y1:y2, x1:x2]
+                crop_name = f"{pid}_line_{line_num}.png"
+                cv2.imwrite(str(crops_out_dir / crop_name), crop)
+
+                ocr_line = GeminiLineOutput(
+                    guesses=entry.guesses,
+                    dose_raw=entry.dose_raw,
+                    freq_raw=entry.freq_raw,
+                    duration_raw=entry.duration_raw,
+                    bbox=[x1, y1, x2, y2],
+                    is_service_error=page_output.is_service_error,
+                    service_error_detail=page_output.service_error_detail
+                )
+                line_items.append((crop_name, [x1, y1, x2, y2], ocr_line))
+
+        # Fallback to OpenCV line segmentation if no usable boxes returned
+        if not line_items:
+            segmented = self.quality_processor.segment_lines(deskewed_img, crops_out_dir, pid)
+            for idx, (crop_filename, bbox) in enumerate(segmented):
+                crop_full_path = crops_out_dir / crop_filename
+                ocr_line = self.ocr_reader.read_line_crop(
+                    str(crop_full_path),
+                    allow_demo_fallback=allow_demo_fallback
+                )
+                if ocr_line.is_service_error and not page_output.is_service_error:
+                    overall_vision_status = "service_unavailable"
+                    overall_vision_msg = ocr_line.service_error_detail
+                line_items.append((crop_filename, bbox, ocr_line))
+
+        # 4, 5, 6, 7, 8, 9: Process each line item
         processed_lines: List[ProcessedLine] = []
         all_can_confirm = True
 
-        for idx, (crop_filename, bbox, pre_data) in enumerate(line_specs):
+        for idx, (crop_filename, bbox, ocr_output) in enumerate(line_items):
             line_id = idx + 1
-            crop_full_path = crops_out_dir / crop_filename
-            
-            # If not copied to pid folder, check root crops
-            if not crop_full_path.exists():
-                alt_path = image_path.parent.parent / "crops" / crop_filename
-                if alt_path.exists():
-                    crop_full_path = alt_path
 
-            # Step 3: OCR
-            if pre_data and "guesses" in pre_data:
-                ocr_output = GeminiLineOutput(
-                    guesses=pre_data.get("guesses", []),
-                    dose_raw=pre_data.get("dose_raw", "unknown"),
-                    freq_raw=pre_data.get("freq_raw", "unknown"),
-                    duration_raw=pre_data.get("duration_raw", "unknown")
-                )
-            else:
-                ocr_output = self.ocr_reader.read_line_crop(str(crop_full_path))
+            # Store original raw OCR extraction for full clinical auditability
+            original_ocr_trace = {
+                "raw_guesses": list(ocr_output.guesses),
+                "raw_dose": ocr_output.dose_raw,
+                "raw_freq": ocr_output.freq_raw,
+                "raw_duration": ocr_output.duration_raw,
+                "is_service_error": ocr_output.is_service_error,
+                "service_error_detail": ocr_output.service_error_detail
+            }
 
-            # Step 4: Matching
-            candidates = self.matcher.match_guesses(ocr_output.guesses, top_k=3)
+            # 5. RapidFuzz & Metaphone local catalog matching
+            candidates = self.matcher.match_guesses(ocr_output.guesses, top_k=4)
             selected_cand = candidates[0] if candidates else None
 
-            # Step 5: Clinical Validation
+            # 6. Online RxNorm live lookup
+            # Query RxNorm using top candidate brand name or top guess
+            rxnorm_query = selected_cand.brand_name if selected_cand else (
+                ocr_output.guesses[0] if (ocr_output.guesses and ocr_output.guesses[0] != "unreadable") else ""
+            )
+            rxnorm_result = await self.rxnorm_client.lookup_medicine(rxnorm_query)
+
+            # 7. Clinical validation
             validation = self.validator.validate_line(
                 ocr_output.dose_raw,
                 ocr_output.freq_raw,
@@ -121,20 +227,24 @@ class MedMatchPipeline:
                 selected_cand
             )
 
-            # Step 6: Look-alike and Confidence Scoring
-            lookalike = self.lookalike_checker.check_candidate(selected_cand.brand_name if selected_cand else "")
+            # 8. ISMP Look-alike safety check
+            candidate_for_lasa = selected_cand.brand_name if selected_cand else ""
+            lookalike = self.lookalike_checker.check_candidate(candidate_for_lasa)
+
+            # 9. Heuristic field-level confidence scoring
             confidence = self.confidence_evaluator.evaluate_confidence(
                 ocr_output.guesses,
                 candidates,
                 validation,
-                lookalike
+                lookalike,
+                is_service_error=ocr_output.is_service_error,
+                service_error_detail=ocr_output.service_error_detail
             )
 
             if not confidence.can_confirm:
                 all_can_confirm = False
 
-            # Format standardized line crop reference
-            crop_url = f"/static/crops/{pid}/{crop_filename}" if (crops_out_dir / crop_filename).exists() else f"/static/testset/crops/{crop_filename}"
+            crop_url = f"/static/crops/{pid}/{crop_filename}"
 
             processed_line = ProcessedLine(
                 line_id=line_id,
@@ -144,11 +254,14 @@ class MedMatchPipeline:
                 dose_raw=ocr_output.dose_raw,
                 freq_raw=ocr_output.freq_raw,
                 duration_raw=ocr_output.duration_raw,
+                original_ocr_trace=original_ocr_trace,
                 top_candidates=candidates,
                 selected_candidate=selected_cand,
+                rxnorm=rxnorm_result,
                 validation=validation,
                 lookalike=lookalike,
                 confidence=confidence,
+                lasa_acknowledged=False,
                 status="pending",
                 final_drug=selected_cand.brand_name if selected_cand else "unreadable",
                 final_dose=validation.dose_standardized or ocr_output.dose_raw,
@@ -157,6 +270,10 @@ class MedMatchPipeline:
             )
             processed_lines.append(processed_line)
 
+        # If no lines segmented
+        if not processed_lines:
+            all_can_confirm = False
+
         return PrescriptionResponse(
             prescription_id=pid,
             original_filename=image_path.name,
@@ -164,6 +281,34 @@ class MedMatchPipeline:
             quality_check=quality,
             lines=processed_lines,
             total_lines=len(processed_lines),
+            status="pending",
             all_can_confirm=all_can_confirm,
-            created_at=datetime.utcnow().isoformat()
+            vision_ai_status=overall_vision_status,
+            vision_ai_message=overall_vision_msg,
+            created_at=datetime.now(timezone.utc).isoformat()
         )
+
+    def process_prescription_image_sync(
+        self,
+        image_path: Path,
+        prescription_id: Optional[str] = None,
+        allow_demo_fallback: bool = False
+    ) -> PrescriptionResponse:
+        """Synchronous wrapper for offline testing and CLI benchmark execution"""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        if loop.is_running():
+            # If inside an existing running loop, create a new task
+            future = asyncio.run_coroutine_threadsafe(
+                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback),
+                loop
+            )
+            return future.result()
+        else:
+            return loop.run_until_complete(
+                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback)
+            )
