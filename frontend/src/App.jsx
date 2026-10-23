@@ -21,7 +21,10 @@ import {
   Stethoscope,
   History,
   Target,
-  Smile
+  Smile,
+  Compass,
+  Award,
+  Maximize2
 } from 'lucide-react';
 
 import ThreeDMedicalScene from './components/ThreeDMedicalScene';
