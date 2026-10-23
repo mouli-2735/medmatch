@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import ProperDoctorAvatar3D from './components/ProperDoctorAvatar3D';
+import ThreeDMedicalScene from './components/ThreeDMedicalScene';
 
 const API_BASE = '';
 
