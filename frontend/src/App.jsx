@@ -39,6 +39,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedCropPreview, setSelectedCropPreview] = useState(null);
   const [showDispenseModal, setShowDispenseModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [showAuditDrawer, setShowAuditDrawer] = useState(false);
   const [processingStage, setProcessingStage] = useState('Analyzing optical quality...');
   
@@ -56,16 +57,6 @@ export default function App() {
 
   const fileInputRef = useRef(null);
   const heroCardRef = useRef(null);
-  const uploadSectionRef = useRef(null);
-  const [isDropzoneHighlighted, setIsDropzoneHighlighted] = useState(false);
-
-  const scrollToUpload = () => {
-    if (uploadSectionRef.current) {
-      uploadSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setIsDropzoneHighlighted(true);
-      setTimeout(() => setIsDropzoneHighlighted(false), 2200);
-    }
-  };
 
   const handleHeroMouseMove = (e) => {
     if (!heroCardRef.current) return;
@@ -94,6 +85,7 @@ export default function App() {
     setLoading(true);
     setUploadError(null);
     setActivePrescription(null);
+    setShowUploadModal(true);
     setZoomLevel(1);
     setImageFilter('normal');
     setImageRotation(0);
@@ -122,6 +114,7 @@ export default function App() {
 
       const data = await res.json();
       setActivePrescription(data);
+      setShowUploadModal(false);
       logAuditEvent('Ingestion', `Prescription #${data.prescription_id} uploaded and segmented (${data.lines?.length || 0} lines)`);
     } catch (e) {
       setUploadError(e.message);
@@ -298,6 +291,18 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      {/* Hidden File Input for Prescription Ingestion */}
+      <input
+        id="file-upload-input"
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
+        }}
+      />
+
       {/* 3D Three.js Floating Molecule Scene in Background */}
       <ThreeDMedicalScene isScanning={loading} />
 
@@ -434,6 +439,7 @@ export default function App() {
                   setActivePrescription(null);
                   setUploadError(null);
                   setAuditLog([]);
+                  setShowUploadModal(true);
                 }}
                 style={{ padding: '8px 12px' }}
                 title="Start new prescription"
@@ -514,7 +520,7 @@ export default function App() {
                       loading={loading}
                       processingStage={processingStage}
                       hoveredLineId={hoveredLineId}
-                      onUploadClick={scrollToUpload}
+                      onUploadClick={() => setShowUploadModal(true)}
                     />
                   </div>
                 ) : (
@@ -530,7 +536,7 @@ export default function App() {
                       cursor: 'pointer',
                       ...tiltStyle,
                     }}
-                    onClick={scrollToUpload}
+                    onClick={() => setShowUploadModal(true)}
                     title="Click to scan prescription on doctor's digital tablet"
                   >
                     <img
@@ -608,7 +614,7 @@ export default function App() {
                     id="btn-hero-ingest"
                     className="btn btn-primary"
                     style={{ padding: '12px 28px', fontSize: '0.94rem' }}
-                    onClick={scrollToUpload}
+                    onClick={() => setShowUploadModal(true)}
                   >
                     <Upload size={18} /> Ingest Prescription
                   </button>
@@ -616,149 +622,220 @@ export default function App() {
                     id="btn-hero-snap"
                     className="btn btn-secondary"
                     style={{ padding: '12px 24px', fontSize: '0.94rem' }}
-                    onClick={scrollToUpload}
+                    onClick={() => setShowUploadModal(true)}
                   >
                     <Camera size={18} color="#06b6d4" /> Snap Photo
                   </button>
                 </div>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Prescription Drag & Drop Upload Zone */}
+        {/* Prescription Upload Ingestion Modal Popup */}
+        {showUploadModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => {
+              if (!loading) setShowUploadModal(false);
+            }}
+            style={{ zIndex: 1200 }}
+          >
             <div
-              id="upload-dropzone-section"
-              ref={uploadSectionRef}
-              className="glass-panel glass-panel-hoverable"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files?.[0]) handleFileUpload(e.dataTransfer.files[0]);
-              }}
+              className="glass-panel"
+              onClick={(e) => e.stopPropagation()}
               style={{
-                padding: '48px 32px',
-                textAlign: 'center',
                 position: 'relative',
-                overflow: 'hidden',
-                border: isDropzoneHighlighted
-                  ? '2px solid #06b6d4'
-                  : '2px dashed rgba(6, 182, 212, 0.35)',
-                boxShadow: isDropzoneHighlighted
-                  ? '0 0 35px rgba(6, 182, 212, 0.45)'
-                  : undefined,
-                transition: 'all 0.4s ease',
-                cursor: 'pointer',
-                marginBottom: 36,
+                width: '100%',
+                maxWidth: 780,
+                padding: '36px',
+                borderRadius: 24,
+                border: '1px solid rgba(6, 182, 212, 0.45)',
+                background: 'rgba(7, 12, 24, 0.96)',
+                boxShadow: '0 25px 80px rgba(0, 0, 0, 0.85), 0 0 60px rgba(6, 182, 212, 0.25)',
+                animation: 'slideInUpCard 0.25s ease-out',
               }}
-              onClick={() => fileInputRef.current?.click()}
             >
-              {loading && <div className="laser-scanner-line" />}
-
-              <input
-                id="file-upload-input"
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
-                }}
-              />
-
-              <div
-                style={{
-                  width: 76,
-                  height: 76,
-                  borderRadius: 22,
-                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.18) 0%, rgba(2, 132, 199, 0.3) 100%)',
-                  border: '1px solid rgba(6, 182, 212, 0.45)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 18px',
-                  color: '#06b6d4',
-                  boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)',
-                }}
-              >
-                <Upload size={34} />
-              </div>
-
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: 8, color: '#f8fafc' }}>
-                Drag & Drop Handwritten Prescription Here
-              </h3>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 22 }}>
-                Supports JPG, PNG, WEBP, or phone camera snapshots. Auto-deskewed and enhanced.
-              </p>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+              {/* Close Button */}
+              {!loading && (
                 <button
-                  id="btn-select-file"
-                  className="btn btn-primary"
-                  style={{ padding: '12px 26px', fontSize: '0.92rem' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <FileText size={18} /> Choose Image File
-                </button>
-                <button
-                  id="btn-camera-capture"
-                  className="btn btn-secondary"
-                  style={{ padding: '12px 22px', fontSize: '0.92rem' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <Camera size={18} /> Camera Snap
-                </button>
-              </div>
-
-              {/* Multi-Stage Loading Indicator */}
-              {loading && (
-                <div
+                  id="btn-close-upload-modal"
+                  onClick={() => setShowUploadModal(false)}
                   style={{
-                    marginTop: 30,
-                    padding: '16px 26px',
-                    borderRadius: 14,
-                    background: 'rgba(6, 182, 212, 0.12)',
-                    border: '1px solid rgba(6, 182, 212, 0.35)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    boxShadow: '0 0 25px rgba(6, 182, 212, 0.25)',
-                  }}
-                >
-                  <RefreshCw size={22} className="pulse-dot" color="#06b6d4" />
-                  <span style={{ fontSize: '0.94rem', color: '#38bdf8', fontWeight: 700 }}>
-                    {processingStage}
-                  </span>
-                </div>
-              )}
-
-              {uploadError && (
-                <div
-                  style={{
-                    marginTop: 24,
-                    padding: '14px 20px',
-                    borderRadius: 10,
-                    background: 'var(--red-bg)',
-                    border: '1px solid var(--red-border)',
-                    color: '#f87171',
-                    fontSize: '0.9rem',
-                    textAlign: 'left',
+                    position: 'absolute',
+                    top: 20,
+                    right: 20,
+                    width: 38,
+                    height: 38,
+                    borderRadius: 12,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#94a3b8',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 12,
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#ffffff';
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = '#94a3b8';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                  }}
+                  title="Close modal"
+                >
+                  <X size={18} />
+                </button>
+              )}
+
+              {/* Modal Header */}
+              <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '5px 14px',
+                    borderRadius: 9999,
+                    background: 'rgba(6, 182, 212, 0.12)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    color: '#38bdf8',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    marginBottom: 10,
                   }}
                 >
-                  <AlertTriangle size={20} color="#f87171" />
-                  <span>{uploadError}</span>
+                  <Sparkles size={13} color="#06b6d4" />
+                  <span>CLINICAL SCRIPT INGESTION</span>
                 </div>
-              )}
+                <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>
+                  Upload Handwritten Prescription
+                </h3>
+              </div>
+
+              {/* Drag & Drop Upload Zone (from screenshot) */}
+              <div
+                id="upload-dropzone-section"
+                className="glass-panel glass-panel-hoverable"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files?.[0]) handleFileUpload(e.dataTransfer.files[0]);
+                }}
+                style={{
+                  padding: '48px 32px',
+                  textAlign: 'center',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  borderRadius: 20,
+                  border: '2px dashed rgba(6, 182, 212, 0.45)',
+                  background: 'rgba(6, 182, 212, 0.04)',
+                  boxShadow: '0 0 35px rgba(6, 182, 212, 0.15)',
+                  cursor: 'pointer',
+                }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {loading && <div className="laser-scanner-line" />}
+
+                <div
+                  style={{
+                    width: 76,
+                    height: 76,
+                    borderRadius: 22,
+                    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.18) 0%, rgba(2, 132, 199, 0.3) 100%)',
+                    border: '1px solid rgba(6, 182, 212, 0.45)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 18px',
+                    color: '#06b6d4',
+                    boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)',
+                  }}
+                >
+                  <Upload size={34} />
+                </div>
+
+                <h4 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: 8, color: '#f8fafc' }}>
+                  Drag & Drop Handwritten Prescription Here
+                </h4>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 24, maxWidth: 480, margin: '0 auto 24px' }}>
+                  Supports JPG, PNG, WEBP, or phone camera snapshots. Auto-deskewed and enhanced.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                  <button
+                    id="btn-select-file"
+                    className="btn btn-primary"
+                    style={{ padding: '12px 26px', fontSize: '0.92rem' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <FileText size={18} /> Choose Image File
+                  </button>
+                  <button
+                    id="btn-camera-capture"
+                    className="btn btn-secondary"
+                    style={{ padding: '12px 22px', fontSize: '0.92rem' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <Camera size={18} /> Camera Snap
+                  </button>
+                </div>
+
+                {/* Multi-Stage Loading Indicator */}
+                {loading && (
+                  <div
+                    style={{
+                      marginTop: 28,
+                      padding: '16px 26px',
+                      borderRadius: 14,
+                      background: 'rgba(6, 182, 212, 0.12)',
+                      border: '1px solid rgba(6, 182, 212, 0.35)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 14,
+                      boxShadow: '0 0 25px rgba(6, 182, 212, 0.25)',
+                    }}
+                  >
+                    <RefreshCw size={22} className="pulse-dot" color="#06b6d4" />
+                    <span style={{ fontSize: '0.94rem', color: '#38bdf8', fontWeight: 700 }}>
+                      {processingStage}
+                    </span>
+                  </div>
+                )}
+
+                {uploadError && (
+                  <div
+                    style={{
+                      marginTop: 24,
+                      padding: '14px 20px',
+                      borderRadius: 10,
+                      background: 'var(--red-bg)',
+                      border: '1px solid var(--red-border)',
+                      color: '#f87171',
+                      fontSize: '0.9rem',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <AlertTriangle size={20} color="#f87171" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+              </div>
             </div>
-
-
           </div>
         )}
 
@@ -821,7 +898,7 @@ export default function App() {
                   className="btn btn-primary"
                   onClick={() => {
                     setActivePrescription(null);
-                    fileInputRef.current?.click();
+                    setShowUploadModal(true);
                   }}
                 >
                   <Camera size={16} /> Retake Prescription Photo
