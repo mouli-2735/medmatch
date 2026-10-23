@@ -24,6 +24,8 @@ import {
   Maximize2
 } from 'lucide-react';
 
+import ThreeDMedicalScene from './components/ThreeDMedicalScene';
+import DoctorAvatarAssistant from './components/DoctorAvatarAssistant';
 import InteractiveDoctor3D from './components/InteractiveDoctor3D';
 
 const API_BASE = '';
