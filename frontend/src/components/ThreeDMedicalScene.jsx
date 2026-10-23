@@ -10,16 +10,19 @@ export default function ThreeDMedicalScene({ isScanning = false }) {
 
     // Scene, Camera, Renderer
     const scene = new THREE.Scene();
+    const width = currentMount.clientWidth || window.innerWidth || 800;
+    const height = currentMount.clientHeight || window.innerHeight || 600;
+
     const camera = new THREE.PerspectiveCamera(
       45,
-      currentMount.clientWidth / currentMount.clientHeight,
+      width / height,
       0.1,
       1000
     );
     camera.position.z = 18;
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
+    renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     currentMount.appendChild(renderer.domElement);
 

@@ -36,7 +36,8 @@ import {
   Award,
   Sparkle,
   Compass,
-  Target
+  Target,
+  Smile
 } from 'lucide-react';
 
 import ThreeDMedicalScene from './components/ThreeDMedicalScene';
@@ -76,18 +77,6 @@ export default function App() {
   const dropdownRef = useRef(null);
   const heroCardRef = useRef(null);
 
-  useEffect(() => {
-    fetchSamples();
-    
-    const handleOutsideClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowCaseDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
-
   const fetchSamples = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/sample-prescriptions`);
@@ -99,6 +88,18 @@ export default function App() {
       console.error('Error fetching clinical cases:', e);
     }
   };
+
+  useEffect(() => {
+    fetchSamples();
+    
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowCaseDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const handleHeroMouseMove = (e) => {
     if (!heroCardRef.current) return;

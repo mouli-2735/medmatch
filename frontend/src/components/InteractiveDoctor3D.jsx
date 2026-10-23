@@ -186,8 +186,8 @@ export default function InteractiveDoctor3D({
     const container = mountRef.current;
     if (!container) return;
 
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    const width = container.clientWidth || (compact ? 200 : 500);
+    const height = container.clientHeight || (compact ? 140 : 480);
 
     // Scene & Camera
     const scene = new THREE.Scene();
@@ -201,12 +201,18 @@ export default function InteractiveDoctor3D({
       camera.lookAt(0, 0.85, 0);
     }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+    } catch (err) {
+      console.warn("WebGL initialization fallback:", err);
+      return;
+    }
 
     // Lighting Setup
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
@@ -755,9 +761,9 @@ export default function InteractiveDoctor3D({
     renderLoop();
 
     const handleResize = () => {
-      if (!container) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      if (!container || !renderer) return;
+      const w = container.clientWidth || (compact ? 200 : 500);
+      const h = container.clientHeight || (compact ? 140 : 480);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -771,10 +777,10 @@ export default function InteractiveDoctor3D({
       container.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('resize', handleResize);
-      if (container.contains(renderer.domElement)) {
+      if (renderer && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-      renderer.dispose();
+      if (renderer) renderer.dispose();
     };
   }, [compact]);
 
