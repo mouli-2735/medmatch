@@ -49,9 +49,6 @@ export default function App() {
   const [activeFilterTab, setActiveFilterTab] = useState('all'); // 'all' | 'red' | 'lookalike' | 'confirmed'
   const [auditLog, setAuditLog] = useState([]);
 
-  // 3D Parallax Tilt for Hero Tablet Card
-  const [tiltStyle, setTiltStyle] = useState({});
-  const [avatarMode, setAvatarMode] = useState('doctor'); // 'doctor' | 'tablet'
   const [theme, setTheme] = useState('skyblue'); // 'skyblue' | 'dark'
 
   React.useEffect(() => {
@@ -65,29 +62,6 @@ export default function App() {
   }, [theme]);
 
   const fileInputRef = useRef(null);
-  const heroCardRef = useRef(null);
-
-  const handleHeroMouseMove = (e) => {
-    if (!heroCardRef.current) return;
-    const rect = heroCardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const rotateX = ((y - centerY) / centerY) * -8;
-    const rotateY = ((x - centerX) / centerX) * 8;
-    setTiltStyle({
-      transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`,
-      transition: 'transform 0.1s ease',
-    });
-  };
-
-  const handleHeroMouseLeave = () => {
-    setTiltStyle({
-      transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
-      transition: 'transform 0.5s ease',
-    });
-  };
 
   const handleFileUpload = async (file) => {
     if (!file) return;
