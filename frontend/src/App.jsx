@@ -23,7 +23,7 @@ import {
   Maximize2
 } from 'lucide-react';
 
-import ThreeDMedicalScene from './components/ThreeDMedicalScene';
+import ProperDoctorAvatar3D from './components/ProperDoctorAvatar3D';
 
 const API_BASE = '';
 
@@ -492,153 +492,14 @@ export default function App() {
                 alignItems: 'center',
               }}
             >
-              {/* Left: 3D Doctor Avatar with Interactive Holographic Parallax */}
-              <div
-                ref={heroCardRef}
-                onMouseMove={handleHeroMouseMove}
-                onMouseLeave={handleHeroMouseLeave}
-                style={{
-                  borderRadius: 20,
-                  overflow: 'hidden',
-                  position: 'relative',
-                  maxHeight: 330,
-                  boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5), 0 0 35px rgba(6, 182, 212, 0.3)',
-                  border: '1px solid rgba(255, 255, 255, 0.16)',
-                  cursor: 'pointer',
-                  ...tiltStyle,
-                }}
-                onClick={() => setShowUploadModal(true)}
-                title="Dr. Alex Reed (Pharm.D) - Click to ingest prescription"
-              >
-                <img
-                  src={avatarMode === 'doctor' ? "/assets/doctor_3d_avatar.jpg" : "/assets/doctor_tablet_desk.jpg"}
-                  alt={avatarMode === 'doctor' ? "3D Clinical Doctor Avatar" : "Digital Tablet Desk"}
-                  style={{
-                    width: '100%',
-                    height: 330,
-                    objectFit: 'cover',
-                    objectPosition: avatarMode === 'doctor' ? 'center 12%' : 'center center',
-                    display: 'block',
-                    transition: 'transform 0.35s ease',
-                  }}
-                />
-
-                {/* Top Header Controls: Badge & Avatar Switcher */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 12,
-                    left: 12,
-                    right: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    zIndex: 5,
-                  }}
-                >
-                  <div
-                    style={{
-                      background: 'rgba(7, 18, 38, 0.88)',
-                      backdropFilter: 'blur(12px)',
-                      padding: '5px 12px',
-                      borderRadius: 9999,
-                      border: '1px solid rgba(6, 182, 212, 0.4)',
-                      color: '#38bdf8',
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <Sparkles size={12} color="#06b6d4" />
-                    <span>{avatarMode === 'doctor' ? '3D DOCTOR AVATAR' : 'DIGITAL TABLET DESK'}</span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      background: 'rgba(7, 18, 38, 0.85)',
-                      backdropFilter: 'blur(12px)',
-                      padding: '3px 6px',
-                      borderRadius: 9999,
-                      border: '1px solid rgba(255, 255, 255, 0.14)',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      onClick={() => setAvatarMode('doctor')}
-                      style={{
-                        background: avatarMode === 'doctor' ? '#06b6d4' : 'transparent',
-                        color: avatarMode === 'doctor' ? '#080d1a' : '#94a3b8',
-                        border: 'none',
-                        borderRadius: 9999,
-                        padding: '3px 10px',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      3D Doctor
-                    </button>
-                    <button
-                      onClick={() => setAvatarMode('tablet')}
-                      style={{
-                        background: avatarMode === 'tablet' ? '#06b6d4' : 'transparent',
-                        color: avatarMode === 'tablet' ? '#080d1a' : '#94a3b8',
-                        border: 'none',
-                        borderRadius: 9999,
-                        padding: '3px 10px',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      Tablet
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bottom Speech / Clinical Dialogue HUD */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 12,
-                    left: 12,
-                    right: 12,
-                    background: 'rgba(6, 15, 32, 0.90)',
-                    backdropFilter: 'blur(14px)',
-                    padding: '10px 14px',
-                    borderRadius: 14,
-                    border: '1px solid rgba(6, 182, 212, 0.35)',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
-                    zIndex: 5,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span className="pulse-dot" style={{ background: '#10b981', width: 6, height: 6 }} />
-                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#06b6d4', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                        {avatarMode === 'doctor' ? 'Dr. Alex Reed (Pharm.D)' : 'MedMatch Rx Workstation'}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
-                      Click to Ingest
-                    </span>
-                  </div>
-                  <p style={{ fontSize: '0.78rem', color: '#f8fafc', lineHeight: 1.35, margin: 0, fontWeight: 500 }}>
-                    {loading
-                      ? `${processingStage || 'Analyzing script handwriting...'}`
-                      : 'AI Clinical Pharmacist active. Cross-checking 91 NLEM drugs & LASA look-alikes.'}
-                  </p>
-                </div>
-
-                {loading && <div className="laser-scanner-line" />}
-              </div>
+              {/* Left: Proper 3D Doctor Avatar with WebGL Scene, Orbiting Capsules & Live Telemetry */}
+              <ProperDoctorAvatar3D
+                activePrescription={activePrescription}
+                loading={loading}
+                processingStage={processingStage}
+                hoveredLineId={hoveredLineId}
+                onOpenUpload={() => setShowUploadModal(true)}
+              />
 
               {/* Right: Editorial Typography & Actions */}
               <div style={{ padding: '12px 10px' }}>
