@@ -173,6 +173,7 @@ class CorrectionRequest(BaseModel):
 class ConfirmLineRequest(BaseModel):
     lasa_acknowledged: Optional[bool] = False
     confirmed_by: Optional[str] = "pharmacist"
+    pharmacist_pin: Optional[str] = None
     notes: Optional[str] = None
 
 class ConfirmLinePayload(BaseModel):
@@ -183,4 +184,5 @@ class ConfirmLinePayload(BaseModel):
     lasa_acknowledged: Optional[bool] = False
     confirmed_by: Optional[str] = "pharmacist"
     corrected_by: Optional[str] = None
+    pharmacist_pin: Optional[str] = None
     notes: Optional[str] = None

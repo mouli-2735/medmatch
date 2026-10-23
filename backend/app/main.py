@@ -3,7 +3,7 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -66,8 +66,9 @@ app.mount("/static/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uplo
 app.mount("/static/crops", StaticFiles(directory=str(CROPS_DIR)), name="crops")
 
 TESTSET_DIR = Path(__file__).resolve().parent.parent.parent / "testset"
-if TESTSET_DIR.exists():
-    app.mount("/static/testset", StaticFiles(directory=str(TESTSET_DIR)), name="testset")
+TESTSET_IMAGES_DIR = TESTSET_DIR / "images"
+if TESTSET_IMAGES_DIR.exists():
+    app.mount("/static/testset/images", StaticFiles(directory=str(TESTSET_IMAGES_DIR)), name="testset_images")
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
@@ -181,7 +182,7 @@ def get_prescription(prescription_id: str):
     return rx
 
 @app.get("/api/prescriptions")
-def list_prescriptions(limit: int = 30):
+def list_prescriptions(limit: int = Query(30, ge=1, le=100)):
     """List recent prescriptions for pharmacist verification queue"""
     conn = get_connection()
     cur = conn.execute("SELECT * FROM prescriptions ORDER BY created_at DESC LIMIT ?", (limit,))
@@ -205,7 +206,8 @@ def list_prescriptions(limit: int = 30):
 def confirm_or_correct_line(
     prescription_id: str,
     line_id: int,
-    payload: Optional[ConfirmLinePayload] = None
+    payload: Optional[ConfirmLinePayload] = None,
+    x_pharmacist_pin: Optional[str] = Header(None, alias="X-Pharmacist-PIN")
 ):
     """
     Step 7: Confirm or correct a prescription line item with server-side safety enforcement.
@@ -213,8 +215,15 @@ def confirm_or_correct_line(
     1. A line flagged RED cannot be directly confirmed without explicit pharmacist correction values.
     2. A line with an active ISMP LASA alert cannot be confirmed without explicit acknowledgment (lasa_acknowledged=True).
     3. Unreadable or missing drug names cannot be silently confirmed.
-    4. Records the authenticated pharmacist actor and recalculates parent prescription status.
+    4. Records the designated pharmacist identifier (with PIN verification when PHARMACIST_PIN is configured).
     """
+    # Verify pharmacist PIN if configured in environment
+    env_pin = os.getenv("PHARMACIST_PIN", "").strip()
+    if env_pin:
+        provided_pin = x_pharmacist_pin or (payload.pharmacist_pin if payload else None)
+        if provided_pin != env_pin:
+            raise HTTPException(status_code=401, detail="Invalid or missing pharmacist PIN.")
+
     rx = get_prescription_by_id(prescription_id)
     if not rx:
         raise HTTPException(status_code=404, detail="Prescription not found.")
@@ -274,11 +283,17 @@ def confirm_or_correct_line(
         if not suggested_drug or suggested_drug == "unreadable":
             raise HTTPException(status_code=400, detail="Cannot confirm a line with an unreadable medicine name.")
 
+        # Store standardized dose, freq, duration (not raw OCR)
+        val_obj = target_line.get("validation") or {}
+        std_dose = val_obj.get("dose_standardized") or target_line.get("final_dose") or target_line.get("dose_raw")
+        std_freq = val_obj.get("freq_standardized") or target_line.get("final_freq") or target_line.get("freq_raw")
+        std_dur = val_obj.get("duration_standardized") or target_line.get("final_duration") or target_line.get("duration_raw")
+
         final_val = {
             "final_drug": suggested_drug,
-            "final_dose": target_line.get("dose_raw"),
-            "final_freq": target_line.get("freq_raw"),
-            "final_duration": target_line.get("duration_raw")
+            "final_dose": std_dose,
+            "final_freq": std_freq,
+            "final_duration": std_dur
         }
         
         actor = (payload.confirmed_by if payload else "pharmacist") or "pharmacist"

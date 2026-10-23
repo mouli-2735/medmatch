@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 import cv2
 
 # Set python path
@@ -12,13 +13,22 @@ sys.path.insert(0, str(BASE_DIR))
 from app.pipeline.processor import MedMatchPipeline
 from app.pipeline.matcher import normalize_drug_string
 
-def run_benchmark():
-    testset_dir = BASE_DIR.parent / "testset"
+def run_benchmark(allow_demo_fallback: bool = False, testset_dir: Optional[Path] = None):
+    """
+    Evaluates MedMatch Rx Pipeline performance on testset without ground-truth cheating.
+    1. Genuine image quality analysis (OpenCV).
+    2. Genuine line segmentation and OCR reading.
+    3. Ground truth is strictly isolated and evaluated ONLY post-prediction.
+    4. Reports accurate top-1, top-3, field-level accuracy, and failure cases.
+    5. Does not claim clinical trial validation.
+    """
+    if testset_dir is None:
+        testset_dir = BASE_DIR.parent / "testset"
     truth_path = testset_dir / "truth.json"
     images_dir = testset_dir / "images"
 
     if not truth_path.exists():
-        print(f"Error: {truth_path} does not exist. Run generate_dataset_and_catalog.py first.")
+        print(f"Error: {truth_path} does not exist.")
         return
 
     with open(truth_path, "r", encoding="utf-8") as f:
@@ -32,6 +42,7 @@ def run_benchmark():
     rejected_qc_rx = 0
     
     total_lines = 0
+    ocr_service_failures = 0
     top1_correct = 0
     top3_correct = 0
     dose_correct = 0
@@ -44,11 +55,18 @@ def run_benchmark():
     unreadable_tested = 0
     unreadable_caught = 0
     
+    failure_cases = []
     timing_records = []
+    confidence_breakdown = {
+        "green": {"total": 0, "top1": 0, "top3": 0},
+        "yellow": {"total": 0, "top1": 0, "top3": 0},
+        "red": {"total": 0, "top1": 0, "top3": 0}
+    }
 
-    print(f"\n==================================================")
-    print(f"  RUNNING MEDMATCH RX PIPELINE BENCHMARK (N={total_rx})")
-    print(f"==================================================\n")
+    print(f"\n==================================================================")
+    print(f"  RUNNING MEDMATCH RX ISOLATED BENCHMARK EVALUATION (N={total_rx})")
+    print(f"  Test Condition: Genuine Image Processing (Isolated Ground Truth)")
+    print(f"==================================================================\n")
 
     for rx in prescriptions:
         rx_id = rx["prescription_id"]
@@ -58,11 +76,11 @@ def run_benchmark():
         
         t0 = time.time()
         
-        # Process prescription
-        res = pipeline.process_prescription_image(
+        # Process prescription WITHOUT passing pre_existing_lines or ground-truth cheats
+        res = pipeline.process_prescription_image_sync(
             image_path=img_path,
             prescription_id=rx_id,
-            pre_existing_lines=rx["lines"]
+            allow_demo_fallback=allow_demo_fallback
         )
         elapsed = time.time() - t0
         timing_records.append(elapsed)
@@ -75,31 +93,73 @@ def run_benchmark():
         passed_qc_rx += 1
         print(f"[{rx_id}] PASSED QC ({category}) - Processed {len(res.lines)} lines ({elapsed*1000:.1f}ms)")
 
+        # Evaluate predicted lines against ground truth (strictly post-prediction)
+        gt_lines = rx.get("lines", [])
+        
         for l_idx, pline in enumerate(res.lines):
             total_lines += 1
-            gt = rx["lines"][l_idx]["ground_truth"]
-            gt_drug = gt["drug"]
-            gt_dose = gt["dose"]
-            gt_freq = gt["frequency"]
-            gt_dur = gt["duration"]
+            
+            # Check if OCR experienced a service failure
+            if pline.original_ocr_trace.get("is_service_error"):
+                ocr_service_failures += 1
+                failure_cases.append({
+                    "prescription_id": rx_id,
+                    "line_id": pline.line_id,
+                    "reason": "Vision AI service failure / quota exceeded",
+                    "detail": pline.original_ocr_trace.get("service_error_detail")
+                })
+                # Skip further evaluation for this line to prevent double counting
+                # and prevent counting API failures as 'unreadable caught'
+                continue
 
-            # Unreadable ground truth check
+            if l_idx >= len(gt_lines):
+                continue
+
+            gt = gt_lines[l_idx].get("ground_truth", {})
+            gt_drug = gt.get("drug", "")
+            gt_dose = gt.get("dose", "")
+            gt_freq = gt.get("frequency", "")
+            gt_dur = gt.get("duration", "")
+
+            # Unreadable safety check
             if gt_drug == "unreadable":
                 unreadable_tested += 1
                 if pline.confidence.level == "red" and not pline.confidence.can_confirm:
                     unreadable_caught += 1
+                else:
+                    failure_cases.append({
+                        "prescription_id": rx_id,
+                        "line_id": pline.line_id,
+                        "reason": "Unreadable handwriting was not flagged as RED",
+                        "predicted_drug": pline.final_drug
+                    })
                 continue
 
-            # Drug Accuracy
+            # Drug Recognition Accuracy
             norm_gt = normalize_drug_string(gt_drug)
             cand_names = [normalize_drug_string(c.brand_name) for c in pline.top_candidates]
             
-            # Top-1 match
+            conf_lvl = pline.confidence.level if pline.confidence.level in ("green", "yellow", "red") else "red"
+            if conf_lvl not in confidence_breakdown:
+                confidence_breakdown[conf_lvl] = {"total": 0, "top1": 0, "top3": 0}
+            confidence_breakdown[conf_lvl]["total"] += 1
+
             if cand_names and cand_names[0] == norm_gt:
                 top1_correct += 1
                 top3_correct += 1
+                confidence_breakdown[conf_lvl]["top1"] += 1
+                confidence_breakdown[conf_lvl]["top3"] += 1
             elif norm_gt in cand_names:
                 top3_correct += 1
+                confidence_breakdown[conf_lvl]["top3"] += 1
+            else:
+                failure_cases.append({
+                    "prescription_id": rx_id,
+                    "line_id": pline.line_id,
+                    "expected_drug": gt_drug,
+                    "top_predictions": [c.brand_name for c in pline.top_candidates[:3]],
+                    "raw_guesses": pline.guesses
+                })
 
             # Dose Accuracy
             if pline.validation.dose_valid:
@@ -119,6 +179,19 @@ def run_benchmark():
                 if pline.lookalike.is_flagged:
                     lookalike_caught += 1
 
+    # Check for invalid run due to OCR service failure
+    if ocr_service_failures > 0:
+        print("\n" + "!" * 65)
+        print("  INVALID RUN: OCR service failure or quota exhaustion detected!")
+        print(f"  {ocr_service_failures} line(s) failed with external API errors.")
+        print("  evaluation_results.json was NOT overwritten.")
+        print("!" * 65 + "\n")
+        return {
+            "status": "INVALID RUN",
+            "ocr_service_failures": ocr_service_failures,
+            "message": "Benchmark invalid due to OCR service failures."
+        }
+
     legible_lines = total_lines - unreadable_tested
     top1_acc = (top1_correct / legible_lines * 100.0) if legible_lines else 0
     top3_acc = (top3_correct / legible_lines * 100.0) if legible_lines else 0
@@ -130,24 +203,45 @@ def run_benchmark():
     unreadable_safety = (unreadable_caught / unreadable_tested * 100.0) if unreadable_tested else 100.0
     avg_pipeline_time_ms = (sum(timing_records) / len(timing_records) * 1000.0) if timing_records else 0
 
+    acc_by_conf = {}
+    for lvl in ("green", "yellow", "red"):
+        c_data = confidence_breakdown.get(lvl, {"total": 0, "top1": 0, "top3": 0})
+        cnt = c_data["total"]
+        acc_by_conf[lvl] = {
+            "total_lines": cnt,
+            "top_1_accuracy_percent": round(c_data["top1"] / cnt * 100.0, 1) if cnt else 0.0,
+            "top_3_accuracy_percent": round(c_data["top3"] / cnt * 100.0, 1) if cnt else 0.0
+        }
+
     results_summary = {
         "benchmark_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "total_prescriptions": total_rx,
-        "passed_qc_prescriptions": passed_qc_rx,
-        "rejected_qc_prescriptions": rejected_qc_rx,
-        "qc_rejection_rate_percent": round(rejected_qc_rx / total_rx * 100.0, 1),
-        "total_lines_analyzed": total_lines,
-        "legible_drug_lines": legible_lines,
-        "top_1_drug_accuracy_percent": round(top1_acc, 1),
-        "top_3_drug_accuracy_percent": round(top3_acc, 1),
-        "dose_field_accuracy_percent": round(dose_acc, 1),
-        "frequency_field_accuracy_percent": round(freq_acc, 1),
-        "duration_field_accuracy_percent": round(dur_acc, 1),
-        "overall_field_accuracy_percent": round((dose_acc + freq_acc + dur_acc) / 3.0, 1),
-        "lookalike_hazard_detection_rate_percent": round(lookalike_recall, 1),
-        "unreadable_safety_catch_rate_percent": round(unreadable_safety, 1),
-        "average_pipeline_latency_ms": round(avg_pipeline_time_ms, 1),
-        "average_pharmacist_review_seconds": 14.2
+        "test_dataset": {
+            "source": "Synthetically generated & curated testset",
+            "total_prescriptions": total_rx,
+            "disclaimer": "Simulated evaluation benchmark. NOT a verified clinical trial."
+        },
+        "quality_control": {
+            "passed_qc_prescriptions": passed_qc_rx,
+            "rejected_qc_prescriptions": rejected_qc_rx,
+            "qc_rejection_rate_percent": round(rejected_qc_rx / total_rx * 100.0, 1)
+        },
+        "pipeline_metrics": {
+            "total_lines_analyzed": total_lines,
+            "legible_drug_lines": legible_lines,
+            "ocr_service_failures": ocr_service_failures,
+            "top_1_drug_accuracy_percent": round(top1_acc, 1),
+            "top_3_drug_accuracy_percent": round(top3_acc, 1),
+            "accuracy_by_confidence_level": acc_by_conf,
+            "dose_field_accuracy_percent": round(dose_acc, 1),
+            "frequency_field_accuracy_percent": round(freq_acc, 1),
+            "duration_field_accuracy_percent": round(dur_acc, 1),
+            "overall_field_accuracy_percent": round((dose_acc + freq_acc + dur_acc) / 3.0, 1),
+            "lookalike_hazard_detection_rate_percent": round(lookalike_recall, 1),
+            "unreadable_safety_catch_rate_percent": round(unreadable_safety, 1),
+            "average_pipeline_latency_ms": round(avg_pipeline_time_ms, 1)
+        },
+        "failure_cases_count": len(failure_cases),
+        "sample_failure_cases": failure_cases[:5]
     }
 
     results_file = testset_dir / "evaluation_results.json"
@@ -155,21 +249,24 @@ def run_benchmark():
         json.dump(results_summary, f, indent=2)
 
     print("\n" + "="*60)
-    print("           SLIDE 7 VERIFIED PERFORMANCE NUMBERS")
+    print("       MEDMATCH RX BENCHMARK EVALUATION SUMMARY")
     print("="*60)
-    print(f" * Top-1 Drug Recognition Accuracy:  {results_summary['top_1_drug_accuracy_percent']}%")
-    print(f" * Top-3 Drug Recognition Accuracy:  {results_summary['top_3_drug_accuracy_percent']}%")
-    print(f" * Overall Clinical Field Accuracy:   {results_summary['overall_field_accuracy_percent']}%")
-    print(f"   - Dose Accuracy:                  {results_summary['dose_field_accuracy_percent']}%")
-    print(f"   - Frequency Standardization:      {results_summary['frequency_field_accuracy_percent']}%")
-    print(f"   - Duration Validation:            {results_summary['duration_field_accuracy_percent']}%")
-    print(f" * Look-Alike Warning Recall:        {results_summary['lookalike_hazard_detection_rate_percent']}%")
-    print(f" * Unreadable Safety Catch Rate:     {results_summary['unreadable_safety_catch_rate_percent']}%")
-    print(f" * Photo QC Rejection Rate:          {results_summary['qc_rejection_rate_percent']}% (Blur/Dark/Glare)")
-    print(f" * Avg Review Time per Prescription: {results_summary['average_pharmacist_review_seconds']}s")
-    print(f" * Avg Processing Latency:           {results_summary['average_pipeline_latency_ms']} ms")
-    print("="*60 + "\n")
-    print(f"Saved evaluation numbers to {results_file}")
+    print(f" * Dataset Size:                    {total_rx} prescriptions ({total_lines} lines)")
+    print(f" * OCR Service Failures:            {ocr_service_failures}")
+    print(f" * Top-1 Drug Recognition Acc:      {results_summary['pipeline_metrics']['top_1_drug_accuracy_percent']}%")
+    print(f" * Top-3 Drug Recognition Acc:      {results_summary['pipeline_metrics']['top_3_drug_accuracy_percent']}%")
+    print(f" * Accuracy by Confidence Level:")
+    for lvl in ("green", "yellow", "red"):
+        lvl_data = acc_by_conf[lvl]
+        print(f"     - {lvl.upper():6s} (N={lvl_data['total_lines']:2d}): Top-1: {lvl_data['top_1_accuracy_percent']:5.1f}% | Top-3: {lvl_data['top_3_accuracy_percent']:5.1f}%")
+    print(f" * Clinical Field Accuracy:         {results_summary['pipeline_metrics']['overall_field_accuracy_percent']}%")
+    print(f" * Look-Alike Hazard Detection:     {results_summary['pipeline_metrics']['lookalike_hazard_detection_rate_percent']}%")
+    print(f" * Unreadable Safety Catch Rate:    {results_summary['pipeline_metrics']['unreadable_safety_catch_rate_percent']}%")
+    print(f" * QC Rejection Rate:               {results_summary['quality_control']['qc_rejection_rate_percent']}%")
+    print(f" * Avg Processing Latency:          {results_summary['pipeline_metrics']['average_pipeline_latency_ms']} ms")
+    print("="*60)
+    print(f"Evaluation report saved to: {results_file}\n")
+    return results_summary
 
 if __name__ == "__main__":
-    run_benchmark()
+    run_benchmark(allow_demo_fallback=False)
