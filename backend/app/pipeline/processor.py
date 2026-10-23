@@ -49,13 +49,14 @@ class MedMatchPipeline:
         self,
         image_path: Path,
         prescription_id: Optional[str] = None,
-        allow_demo_fallback: bool = False
+        allow_demo_fallback: bool = False,
+        manual_rotation: Optional[int] = None
     ) -> PrescriptionResponse:
         """
         Executes pipeline on an uploaded image without hardcoded demo shortcuts:
         1. OpenCV Image Quality Analysis (blur, dark, glare)
-        2. OpenCV Auto-orient and Deskew
-        3. OpenCV Line Segmentation
+        2. OpenCV Auto-orient and Deskew (with scale normalization & rotation override)
+        3. OpenCV Line Segmentation / Vision AI Single-Page Bounding Box Extraction
         4. Vision AI OCR (real multimodal reading)
         5. RapidFuzz & Metaphone local catalog matching
         6. Live RxNorm online reference lookup
@@ -77,7 +78,9 @@ class MedMatchPipeline:
                 has_glare=False,
                 glare_share=0.0,
                 message="Image file could not be read or is corrupted. Please re-upload.",
-                deskew_angle=0.0
+                deskew_angle=0.0,
+                rotation_applied=0,
+                orientation_confident=True
             )
             return PrescriptionResponse(
                 prescription_id=pid,
@@ -111,8 +114,14 @@ class MedMatchPipeline:
             )
 
         # 2. OpenCV Auto-orient and Deskew
-        deskewed_img, angle = self.quality_processor.auto_orient_and_deskew(image_bgr)
+        deskewed_img, angle, rot_applied, orient_conf = self.quality_processor.auto_orient_and_deskew(
+            image_bgr,
+            ocr_reader=self.ocr_reader,
+            manual_rotation=manual_rotation
+        )
         quality.deskew_angle = angle
+        quality.rotation_applied = rot_applied
+        quality.orientation_confident = orient_conf
 
         # 3. Vision AI Single-Page OCR or OpenCV Segmentation Fallback
         crops_out_dir = CROPS_DIR / pid
@@ -292,7 +301,8 @@ class MedMatchPipeline:
         self,
         image_path: Path,
         prescription_id: Optional[str] = None,
-        allow_demo_fallback: bool = False
+        allow_demo_fallback: bool = False,
+        manual_rotation: Optional[int] = None
     ) -> PrescriptionResponse:
         """Synchronous wrapper for offline testing and CLI benchmark execution"""
         try:
@@ -302,13 +312,12 @@ class MedMatchPipeline:
             asyncio.set_event_loop(loop)
             
         if loop.is_running():
-            # If inside an existing running loop, create a new task
             future = asyncio.run_coroutine_threadsafe(
-                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback),
+                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback, manual_rotation=manual_rotation),
                 loop
             )
             return future.result()
         else:
             return loop.run_until_complete(
-                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback)
+                self.process_prescription_image(image_path, prescription_id, allow_demo_fallback, manual_rotation=manual_rotation)
             )

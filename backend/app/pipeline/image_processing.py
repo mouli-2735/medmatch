@@ -67,52 +67,133 @@ class ImageQualityProcessor:
             message=final_msg
         )
 
+    @staticmethod
+    def resize_to_long_side(image_bgr: np.ndarray, target_size: int = 1600) -> np.ndarray:
+        """Resizes image so that its longest side equals target_size (scale-independent thresholds)"""
+        if image_bgr is None or image_bgr.size == 0:
+            return image_bgr
+        h, w = image_bgr.shape[:2]
+        long_side = max(h, w)
+        if long_side == target_size:
+            return image_bgr
+        scale = target_size / float(long_side)
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+        return cv2.resize(image_bgr, (new_w, new_h), interpolation=interp)
+
     def deskew(self, image_bgr: np.ndarray) -> Tuple[np.ndarray, float]:
         """
-        Detects text skew angle and straightens the image.
+        Straightens skewed document using a projection-profile variance search
+        over -10..+10 degrees on ink pixels.
         """
+        h, w = image_bgr.shape[:2]
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-        # Invert: text should be white, paper background black
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-        
-        coords = np.column_stack(np.where(thresh > 0))
-        if len(coords) < 100:
-            return image_bgr, 0.0
+        ink = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 10
+        )
+        # Downsample for fast profile search (~50ms)
+        scale = 400.0 / max(h, w)
+        small_w = max(1, int(round(w * scale)))
+        small_h = max(1, int(round(h * scale)))
+        small_ink = cv2.resize(ink, (small_w, small_h), interpolation=cv2.INTER_NEAREST)
 
-        angle = cv2.minAreaRect(coords)[-1]
-        if angle < -45:
-            angle = -(90 + angle)
-        elif angle > 45:
-            angle = 90 - angle
-        else:
-            angle = -angle
+        center = (small_w // 2, small_h // 2)
+        best_angle = 0.0
+        max_var = -1.0
 
-        # Only deskew if noticeable tilt (< 35 degrees)
-        if abs(angle) > 0.5 and abs(angle) < 35.0:
-            (h, w) = image_bgr.shape[:2]
-            center = (w // 2, h // 2)
-            M = cv2.getRotationMatrix2D(center, angle, 1.0)
-            rotated = cv2.warpAffine(image_bgr, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-            return rotated, round(angle, 2)
+        for a in np.arange(-10.0, 10.5, 0.5):
+            M = cv2.getRotationMatrix2D(center, float(a), 1.0)
+            rot = cv2.warpAffine(small_ink, M, (small_w, small_h), flags=cv2.INTER_NEAREST)
+            proj = np.sum(rot > 0, axis=1)
+            v = float(np.var(proj))
+            if v > max_var:
+                max_var = v
+                best_angle = float(a)
+
+        # Only deskew if noticeable tilt (>= 0.5 degrees)
+        if abs(best_angle) >= 0.5:
+            full_center = (w // 2, h // 2)
+            M_full = cv2.getRotationMatrix2D(full_center, best_angle, 1.0)
+            deskewed = cv2.warpAffine(
+                image_bgr, M_full, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+            )
+            return deskewed, round(best_angle, 2)
 
         return image_bgr, 0.0
 
-    def auto_orient_and_deskew(self, image_bgr: np.ndarray) -> Tuple[np.ndarray, float]:
+    def auto_orient_and_deskew(
+        self,
+        image_bgr: np.ndarray,
+        ocr_reader: Optional[Any] = None,
+        manual_rotation: Optional[int] = None
+    ) -> Tuple[np.ndarray, float, int, bool]:
         """
-        Detects if photo was taken in landscape mode for a portrait pad (w > h * 1.15)
-        and rotates 90 degrees clockwise, then applies subtle deskewing.
+        1. Resizes image to long side 1600 before processing so thresholds are scale-independent.
+        2. Applies manual rotation override if provided (0, 90, 180, 270).
+           Otherwise computes row-projection variance on paper ink vs transpose to detect axis,
+           and invokes low-res (<=512px) Gemini orientation call to resolve 0/180 or 90/270.
+           If Gemini is unavailable, applies default and sets orientation_confident=False.
+        3. Straightens tilt using projection-profile variance search over -10..+10 degrees.
+        Returns: (deskewed_image, deskew_angle, rotation_applied, orientation_confident)
         """
-        h, w = image_bgr.shape[:2]
-        total_angle = 0.0
-        oriented = image_bgr
+        resized = self.resize_to_long_side(image_bgr, 1600)
+        h, w = resized.shape[:2]
 
-        if w > h * 1.15:
-            oriented = cv2.rotate(image_bgr, cv2.ROTATE_90_CLOCKWISE)
-            total_angle += 90.0
+        rotation_applied = 0
+        orientation_confident = True
 
-        deskewed, d_angle = self.deskew(oriented)
-        total_angle += d_angle
-        return deskewed, round(total_angle, 2)
+        if manual_rotation is not None and manual_rotation in (0, 90, 180, 270):
+            rotation_applied = int(manual_rotation)
+            orientation_confident = True
+            if rotation_applied == 90:
+                resized = cv2.rotate(resized, cv2.ROTATE_90_CLOCKWISE)
+            elif rotation_applied == 180:
+                resized = cv2.rotate(resized, cv2.ROTATE_180)
+            elif rotation_applied == 270:
+                resized = cv2.rotate(resized, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        else:
+            # Detect axis: compute row-projection variance of ink pixels
+            hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
+            sat = hsv[:, :, 1]
+            val = hsv[:, :, 2]
+            paper_mask = ((sat < 70) & (val > 80)).astype(np.uint8) * 255
+            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+            ink = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10
+            )
+            ink = cv2.bitwise_and(ink, ink, mask=paper_mask)
+
+            proj_h = np.sum(ink > 0, axis=1).astype(float)
+            proj_v = np.sum(ink.T > 0, axis=1).astype(float)
+            var_h = float(np.var(proj_h))
+            var_v = float(np.var(proj_v))
+
+            # Query small low-res (<=512px) Gemini orientation call if available
+            gemini_rot = None
+            if ocr_reader and hasattr(ocr_reader, "detect_orientation"):
+                gemini_rot, gemini_conf = ocr_reader.detect_orientation(resized)
+                if gemini_conf and gemini_rot is not None:
+                    rotation_applied = gemini_rot
+                    orientation_confident = True
+
+            if gemini_rot is None:
+                # Gemini is unavailable: apply default and set orientation_confident=False
+                orientation_confident = False
+                if w > h * 1.15 or var_v > var_h:
+                    rotation_applied = 270
+                else:
+                    rotation_applied = 0
+
+            if rotation_applied == 90:
+                resized = cv2.rotate(resized, cv2.ROTATE_90_CLOCKWISE)
+            elif rotation_applied == 180:
+                resized = cv2.rotate(resized, cv2.ROTATE_180)
+            elif rotation_applied == 270:
+                resized = cv2.rotate(resized, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        deskewed, deskew_angle = self.deskew(resized)
+        return deskewed, deskew_angle, rotation_applied, orientation_confident
 
     def segment_lines(self, image_bgr: np.ndarray, output_dir: Path, prefix: str) -> List[Tuple[str, List[int]]]:
         """

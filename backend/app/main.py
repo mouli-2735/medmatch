@@ -101,7 +101,10 @@ async def health_check():
     }
 
 @app.post("/api/prescriptions/upload", response_model=PrescriptionResponse)
-async def upload_prescription(file: UploadFile = File(...)):
+async def upload_prescription(
+    file: UploadFile = File(...),
+    rotation: Optional[int] = Form(None)
+):
     """
     Step 8 & 9: Secure upload endpoint.
     1. Validates file size, extension, MIME type, and image data integrity.
@@ -160,7 +163,8 @@ async def upload_prescription(file: UploadFile = File(...)):
     result = await pipeline.process_prescription_image(
         image_path=save_path,
         prescription_id=file_id,
-        allow_demo_fallback=False
+        allow_demo_fallback=False,
+        manual_rotation=rotation
     )
 
     # Persist in SQLite

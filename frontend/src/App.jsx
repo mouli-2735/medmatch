@@ -50,6 +50,16 @@ export default function App() {
   const [auditLog, setAuditLog] = useState([]);
 
   const [theme, setTheme] = useState('skyblue'); // 'skyblue' | 'dark'
+  const [pharmacistName, setPharmacistName] = useState('Dr. Alex Reed (Pharm.D)');
+  const [lasaAckMap, setLasaAckMap] = useState({});
+  const [sampleScenarios, setSampleScenarios] = useState([]);
+
+  React.useEffect(() => {
+    fetch(`${API_BASE}/api/sample-prescriptions`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setSampleScenarios(data))
+      .catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     if (theme === 'dark') {
@@ -63,15 +73,23 @@ export default function App() {
 
   const fileInputRef = useRef(null);
 
-  const handleFileUpload = async (file) => {
-    if (!file) return;
+  const [lastUploadedFile, setLastUploadedFile] = useState(null);
+
+  const handleFileUpload = async (file, overrideRotation = null) => {
+    const targetFile = file || lastUploadedFile;
+    if (!targetFile) return;
+    setLastUploadedFile(targetFile);
     setLoading(true);
     setUploadError(null);
     setActivePrescription(null);
     setShowUploadModal(true);
     setZoomLevel(1);
     setImageFilter('normal');
-    setImageRotation(0);
+    if (overrideRotation !== null && overrideRotation !== undefined) {
+      setImageRotation(overrideRotation);
+    } else {
+      setImageRotation(0);
+    }
     setProcessingStage('Inspecting blur, lighting & glare...');
 
     const stageTimer1 = setTimeout(() => {
@@ -82,7 +100,10 @@ export default function App() {
     }, 2800);
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', targetFile);
+    if (overrideRotation !== null && overrideRotation !== undefined) {
+      formData.append('rotation', overrideRotation);
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/prescriptions/upload`, {
@@ -100,7 +121,10 @@ export default function App() {
       setShowUploadModal(false);
       logAuditEvent('Ingestion', `Prescription #${data.prescription_id} uploaded and segmented (${data.lines?.length || 0} lines)`);
     } catch (e) {
-      setUploadError(e.message);
+      const msg = e.message === 'Failed to fetch'
+        ? 'Unable to connect to MedMatch backend server (http://127.0.0.1:8000). Please verify the backend server is running.'
+        : e.message;
+      setUploadError(msg);
     } finally {
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
@@ -116,21 +140,63 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString(),
       action,
       detail,
-      user: 'Dr. Alex Reed (Pharm.D)',
+      user: pharmacistName,
     };
     setAuditLog((prev) => [entry, ...prev]);
+  };
+
+  const handleLoadSample = async (sampleId) => {
+    setLoading(true);
+    setUploadError(null);
+    setProcessingStage(`Loading sample scenario #${sampleId}...`);
+    try {
+      const res = await fetch(`${API_BASE}/api/sample-prescriptions/${sampleId}/load`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to load sample prescription');
+      }
+      const data = await res.json();
+      setActivePrescription(data);
+      setShowUploadModal(false);
+      if (data.audit_logs && data.audit_logs.length > 0) {
+        setAuditLog(data.audit_logs.map(a => ({
+          id: a.id,
+          timestamp: new Date(a.timestamp).toLocaleTimeString(),
+          action: a.action,
+          detail: a.details,
+          user: a.actor
+        })));
+      } else {
+        logAuditEvent('Demo Ingestion', `Sample scenario #${sampleId} loaded for clinical verification review.`);
+      }
+    } catch (e) {
+      setUploadError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirmLine = async (lineId, correctionData = null) => {
     if (!activePrescription) return;
     try {
-      const body = correctionData ? JSON.stringify(correctionData) : null;
+      const isLasaAck = Boolean(lasaAckMap[lineId] || correctionData?.lasa_acknowledged);
+      const payload = correctionData ? {
+        ...correctionData,
+        corrected_by: pharmacistName,
+        lasa_acknowledged: isLasaAck
+      } : {
+        confirmed_by: pharmacistName,
+        lasa_acknowledged: isLasaAck
+      };
+
       const res = await fetch(
         `${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/lines/${lineId}/confirm`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: body,
+          body: JSON.stringify(payload),
         }
       );
 
@@ -140,40 +206,20 @@ export default function App() {
         return;
       }
 
-      setActivePrescription((prev) => {
-        const updatedLines = prev.lines.map((l) => {
-          if (l.line_id === lineId) {
-            if (correctionData) {
-              return {
-                ...l,
-                status: 'corrected',
-                final_drug: correctionData.final_drug,
-                final_dose: correctionData.final_dose,
-                final_freq: correctionData.final_freq,
-                final_duration: correctionData.final_duration,
-                confidence: { ...l.confidence, can_confirm: true, level: 'green' },
-              };
-            }
-            return { ...l, status: 'confirmed' };
-          }
-          return l;
-        });
-
-        const hasUnapprovedRed = updatedLines.some(
-          (l) => l.confidence.level === 'red' && l.status === 'pending'
-        );
-
-        return {
-          ...prev,
-          lines: updatedLines,
-          all_can_confirm: !hasUnapprovedRed,
-        };
-      });
-
-      if (correctionData) {
-        logAuditEvent('Line Override', `Line #${lineId} modified: ${correctionData.final_drug} (${correctionData.notes || 'Pharmacist correction'})`);
-      } else {
-        logAuditEvent('Line Approved', `Line #${lineId} verified and signed off`);
+      // Re-fetch updated prescription from server to keep database and UI 100% synchronized
+      const freshRes = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
+      if (freshRes.ok) {
+        const freshData = await freshRes.json();
+        setActivePrescription(freshData);
+        if (freshData.audit_logs) {
+          setAuditLog(freshData.audit_logs.map(a => ({
+            id: a.id,
+            timestamp: new Date(a.timestamp).toLocaleTimeString(),
+            action: a.action,
+            detail: a.details,
+            user: a.actor
+          })));
+        }
       }
 
       setEditingLineId(null);
@@ -200,6 +246,8 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/confirm-all`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed_by: pharmacistName })
       });
       if (!res.ok) {
         const err = await res.json();
@@ -207,11 +255,11 @@ export default function App() {
         return;
       }
 
-      setActivePrescription((prev) => ({
-        ...prev,
-        lines: prev.lines.map((l) => ({ ...l, status: 'confirmed' })),
-        all_can_confirm: true,
-      }));
+      const freshRes = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
+      if (freshRes.ok) {
+        const freshData = await freshRes.json();
+        setActivePrescription(freshData);
+      }
 
       logAuditEvent('Batch Approval', `Prescription #${activePrescription.prescription_id} fully approved and released to dispense queue`);
       triggerCelebrationConfetti();
@@ -377,7 +425,30 @@ export default function App() {
 
             <div className="glass-pill" style={{ borderColor: 'rgba(16, 185, 129, 0.25)', color: '#34d399' }}>
               <span className="pulse-dot" style={{ background: '#10b981' }} />
-              <span>NLEM 2022 CATALOG (91 DRUGS)</span>
+              <span>NLEM & RxNorm ONLINE</span>
+            </div>
+
+            {/* Pharmacist Profile Badge */}
+            <div
+              className="glass-pill"
+              style={{ padding: '4px 10px', gap: 6, borderColor: 'rgba(6, 182, 212, 0.3)' }}
+              title="Pharmacist Identity recorded on audit logs & signatures"
+            >
+              <Stethoscope size={14} color="#06b6d4" />
+              <input
+                type="text"
+                value={pharmacistName}
+                onChange={(e) => setPharmacistName(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#38bdf8',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  width: '160px',
+                  outline: 'none',
+                }}
+              />
             </div>
 
             {/* Theme Toggle Button */}
@@ -740,6 +811,45 @@ export default function App() {
                     <span>{uploadError}</span>
                   </div>
                 )}
+
+                {/* Separated Demo Scenarios Picker */}
+                {sampleScenarios.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 28,
+                      paddingTop: 20,
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                      textAlign: 'left',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.05em' }}>
+                      ⚡ OR TEST CURATED CLINICAL DEMO SCENARIOS (SEPARATED DEMO MODE):
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                      {sampleScenarios.map((sc) => (
+                        <button
+                          key={sc.id}
+                          className="btn btn-secondary"
+                          style={{
+                            padding: '10px 14px',
+                            fontSize: '0.78rem',
+                            textAlign: 'left',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 3,
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            borderColor: 'rgba(255, 255, 255, 0.12)',
+                          }}
+                          onClick={() => handleLoadSample(sc.id)}
+                        >
+                          <span style={{ fontWeight: 700, color: '#38bdf8' }}>{sc.name}</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{sc.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -941,8 +1051,8 @@ export default function App() {
                       SOURCE PRESCRIPTION IMAGE
                     </span>
 
-                    {/* Interactive Zoom & Rotate Tools */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {/* Interactive Zoom, Rotate & Re-scan Tools */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-secondary"
                         style={{ padding: '4px 8px', fontSize: '0.75rem' }}
@@ -960,27 +1070,59 @@ export default function App() {
                         <ZoomOut size={14} />
                       </button>
                       <button
+                        id="btn-rotate-left"
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => setImageRotation((r) => (r - 90 + 360) % 360)}
+                        title="Rotate 90° Counter-Clockwise"
+                      >
+                        ↺ -90°
+                      </button>
+                      <button
+                        id="btn-rotate-right"
                         className="btn btn-secondary"
                         style={{ padding: '4px 8px', fontSize: '0.75rem' }}
                         onClick={() => setImageRotation((r) => (r + 90) % 360)}
                         title="Rotate 90° Clockwise"
                       >
-                        <RotateCw size={14} />
+                        <RotateCw size={14} /> +90°
                       </button>
                       <button
-                        className="btn btn-secondary"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          setZoomLevel(1);
-                          setImageRotation(0);
-                          setImageFilter('normal');
-                        }}
-                        title="Reset View"
+                        id="btn-rescan-rotation"
+                        className="btn btn-primary"
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => handleFileUpload(lastUploadedFile, imageRotation)}
+                        disabled={!lastUploadedFile || loading}
+                        title="Re-scan optical lines with selected rotation"
                       >
-                        100%
+                        <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                        <span>Re-scan</span>
                       </button>
                     </div>
                   </div>
+
+                  {/* Orientation Confidence Notice */}
+                  {activePrescription?.quality_check && activePrescription.quality_check.orientation_confident === false && (
+                    <div
+                      id="notice-orientation-uncertain"
+                      style={{
+                        padding: '8px 12px',
+                        marginBottom: 12,
+                        borderRadius: 10,
+                        background: 'rgba(245, 158, 11, 0.14)',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        color: '#fbbf24',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <AlertTriangle size={15} color="#fbbf24" style={{ flexShrink: 0 }} />
+                      <span>Auto-orientation was estimated. Use Rotate & Re-scan if page appears sideways.</span>
+                    </div>
+                  )}
 
                   {/* Filter Pills (Normal / High Contrast / Invert) */}
                   <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -1289,9 +1431,15 @@ export default function App() {
                               id={`btn-approve-line-${line.line_id}`}
                               className={`btn ${isConfirmed ? 'btn-secondary' : 'btn-success'}`}
                               style={{ padding: '6px 16px', fontSize: '0.82rem' }}
-                              disabled={isRed && line.status === 'pending'}
+                              disabled={(isRed && line.status === 'pending') || (line.lookalike?.is_flagged && !lasaAckMap[line.line_id] && line.status === 'pending')}
                               onClick={() => handleConfirmLine(line.line_id)}
-                              title={isRed && line.status === 'pending' ? 'Pharmacist review required for red line' : 'Approve this line'}
+                              title={
+                                isRed && line.status === 'pending'
+                                  ? 'Pharmacist review required for red line'
+                                  : line.lookalike?.is_flagged && !lasaAckMap[line.line_id] && line.status === 'pending'
+                                  ? 'Acknowledge LASA hazard checkbox before approving'
+                                  : 'Approve this line'
+                              }
                             >
                               <CheckCircle2 size={15} />
                               {isConfirmed ? 'Re-Verify' : 'Approve Line'}
@@ -1361,8 +1509,8 @@ export default function App() {
                         {/* Right: Identified Drug, Safety Hazard & Regimen */}
                         <div>
                           {/* Identified Drug Brand & Generic */}
-                          <div style={{ marginBottom: 14 }}>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
                                 {line.final_drug || line.selected_candidate?.brand_name || 'Illegible / Unreadable'}
                               </span>
@@ -1387,6 +1535,112 @@ export default function App() {
                                 </span>
                               )}
                             </div>
+
+                            {/* RxNorm Online Reference Details Badge */}
+                            {line.rxnorm && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                                {line.rxnorm.match_type === 'exact' ? (
+                                  <span
+                                    title="Verified against US NLM RxNorm live API (Exact match)"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '2px 8px',
+                                      borderRadius: 4,
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      background: 'rgba(16, 185, 129, 0.15)',
+                                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                                      color: '#34d399',
+                                    }}
+                                  >
+                                    <CheckCircle2 size={12} /> NLM RxNorm Verified (Exact)
+                                  </span>
+                                ) : line.rxnorm.match_type === 'approximate' ? (
+                                  <span
+                                    title="Approximate match returned by NLM RxNorm"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '2px 8px',
+                                      borderRadius: 4,
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      background: 'rgba(245, 158, 11, 0.15)',
+                                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                                      color: '#fbbf24',
+                                    }}
+                                  >
+                                    NLM RxNorm (Approximate)
+                                  </span>
+                                ) : (
+                                  <span
+                                    title="Not found in US NLM RxNorm database (Common for regional / Indian brand formulations)"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '2px 8px',
+                                      borderRadius: 4,
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      background: 'rgba(148, 163, 184, 0.15)',
+                                      border: '1px solid rgba(148, 163, 184, 0.3)',
+                                      color: '#94a3b8',
+                                    }}
+                                  >
+                                    Not in US RxNorm (Regional / Indian Brand)
+                                  </span>
+                                )}
+
+                                {line.rxnorm.rxcui && (
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#93c5fd' }}>
+                                    RxCUI: {line.rxnorm.rxcui}
+                                  </span>
+                                )}
+
+                                {line.rxnorm.display_name && line.rxnorm.display_name !== (line.final_drug || line.selected_candidate?.brand_name) && (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)' }}>
+                                    Ref: {line.rxnorm.display_name}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Field-Level Heuristic Confidence Indicators */}
+                            {line.field_confidences && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                  Field Confidence:
+                                </span>
+                                {['drug', 'dose', 'frequency', 'duration'].map((fKey) => {
+                                  const conf = line.field_confidences[fKey];
+                                  if (!conf) return null;
+                                  const color = conf.label === 'high' ? '#34d399' : conf.label === 'medium' ? '#fbbf24' : '#f87171';
+                                  const bg = conf.label === 'high' ? 'rgba(16, 185, 129, 0.12)' : conf.label === 'medium' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)';
+                                  return (
+                                    <span
+                                      key={fKey}
+                                      title={`${fKey.toUpperCase()}: ${conf.explanation} (Heuristic indicator)`}
+                                      style={{
+                                        fontSize: '0.68rem',
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        background: bg,
+                                        color: color,
+                                        border: `1px solid ${color}40`,
+                                        fontWeight: 600,
+                                        textTransform: 'capitalize',
+                                      }}
+                                    >
+                                      {fKey}: {conf.label} ({(conf.score * 100).toFixed(0)}%)
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
 
                           {/* Look-Alike / Sound-Alike (LASA) Confusable Pair Alert */}
@@ -1400,50 +1654,64 @@ export default function App() {
                                 background: 'rgba(239, 68, 68, 0.15)',
                                 border: '1px solid rgba(239, 68, 68, 0.5)',
                                 marginBottom: 16,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 16,
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <AlertOctagon size={24} color="#f87171" />
-                                <div>
-                                  <div style={{ fontSize: '0.86rem', color: '#fca5a5', fontWeight: 700 }}>
-                                    CONFUSABLE LOOK-ALIKE HAZARD (LASA RISK)
-                                  </div>
-                                  <div style={{ fontSize: '0.82rem', color: '#fecaca', marginTop: 2 }}>
-                                    {line.lookalike.warning_message}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <AlertOctagon size={24} color="#f87171" />
+                                  <div>
+                                    <div style={{ fontSize: '0.86rem', color: '#fca5a5', fontWeight: 700 }}>
+                                      CONFUSABLE LOOK-ALIKE HAZARD (LASA RISK)
+                                    </div>
+                                    <div style={{ fontSize: '0.82rem', color: '#fecaca', marginTop: 2 }}>
+                                      {line.lookalike.warning_message}
+                                    </div>
                                   </div>
                                 </div>
+
+                                {line.lookalike.paired_drug && (
+                                  <button
+                                    className="btn btn-secondary fast-fix-pill"
+                                    style={{
+                                      padding: '7px 16px',
+                                      fontSize: '0.8rem',
+                                      background: 'rgba(239, 68, 68, 0.28)',
+                                      borderColor: 'rgba(239, 68, 68, 0.65)',
+                                      color: '#ffffff',
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: 700,
+                                    }}
+                                    onClick={() => {
+                                      handleConfirmLine(line.line_id, {
+                                        final_drug: line.lookalike.paired_drug,
+                                        final_dose: line.final_dose || line.dose_raw,
+                                        final_freq: line.final_freq || line.freq_raw,
+                                        final_duration: line.final_duration || line.duration_raw,
+                                        corrected_by: 'pharmacist',
+                                        notes: `Swapped confusable pair from ${line.selected_candidate?.brand_name} to ${line.lookalike.paired_drug}`,
+                                        lasa_acknowledged: true,
+                                      });
+                                    }}
+                                  >
+                                    <ArrowRightLeft size={14} /> Swap to {line.lookalike.paired_drug}
+                                  </button>
+                                )}
                               </div>
 
-                              {line.lookalike.paired_drug && (
-                                <button
-                                  className="btn btn-secondary fast-fix-pill"
-                                  style={{
-                                    padding: '7px 16px',
-                                    fontSize: '0.8rem',
-                                    background: 'rgba(239, 68, 68, 0.28)',
-                                    borderColor: 'rgba(239, 68, 68, 0.65)',
-                                    color: '#ffffff',
-                                    whiteSpace: 'nowrap',
-                                    fontWeight: 700,
-                                  }}
-                                  onClick={() => {
-                                    handleConfirmLine(line.line_id, {
-                                      final_drug: line.lookalike.paired_drug,
-                                      final_dose: line.final_dose || line.dose_raw,
-                                      final_freq: line.final_freq || line.freq_raw,
-                                      final_duration: line.final_duration || line.duration_raw,
-                                      corrected_by: 'pharmacist',
-                                      notes: `Swapped confusable pair from ${line.selected_candidate?.brand_name} to ${line.lookalike.paired_drug}`,
-                                    });
-                                  }}
-                                >
-                                  <ArrowRightLeft size={14} /> Swap to {line.lookalike.paired_drug}
-                                </button>
-                              )}
+                              {/* Pharmacist Acknowledgment Checkbox */}
+                              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.8rem', color: '#fca5a5' }}>
+                                  <input
+                                    type="checkbox"
+                                    id={`lasa-ack-checkbox-${line.line_id}`}
+                                    checked={!!lasaAckMap[line.line_id]}
+                                    onChange={(e) => setLasaAckMap({ ...lasaAckMap, [line.line_id]: e.target.checked })}
+                                  />
+                                  <span>
+                                    <strong>Mandatory Pharmacist Acknowledgment:</strong> I have independently verified this medication against look-alike/sound-alike risks before approval.
+                                  </span>
+                                </label>
+                              </div>
                             </div>
                           )}
 
@@ -1539,6 +1807,7 @@ export default function App() {
                                       ? '#06b6d4'
                                       : 'rgba(255, 255, 255, 0.1)',
                                 }}
+                                title={`Spelling (RapidFuzz): ${(cand.ortho_score * 100).toFixed(0)}% | Phonetic (Metaphone): ${(cand.phonetic_score * 100).toFixed(0)}%${cand.sound_explanation ? ' - ' + cand.sound_explanation : ''}`}
                                 onClick={() => {
                                   handleConfirmLine(line.line_id, {
                                     final_drug: cand.brand_name,
@@ -1546,11 +1815,14 @@ export default function App() {
                                     final_freq: line.final_freq || line.freq_raw,
                                     final_duration: line.final_duration || line.duration_raw,
                                     corrected_by: 'pharmacist',
-                                    notes: `Selected candidate #${cIdx + 1} from match ranking`,
+                                    notes: `Selected candidate #${cIdx + 1} (${cand.brand_name}) from match ranking`,
                                   });
                                 }}
                               >
                                 {cand.brand_name} ({(cand.combined_score * 100).toFixed(0)}%)
+                                {cand.phonetic_score >= 0.85 && (
+                                  <span style={{ fontSize: '0.68rem', color: '#38bdf8', marginLeft: 4 }}>🔊 Sound-alike</span>
+                                )}
                               </button>
                             ))}
                           </div>
@@ -1635,13 +1907,35 @@ export default function App() {
                                         fontSize: '0.8rem',
                                         cursor: 'pointer',
                                         borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
                                       }}
                                       onMouseDown={() => {
                                         setCustomForm({ ...customForm, drug: d.brand_name });
                                         setSearchResults([]);
                                       }}
                                     >
-                                      <strong>{d.brand_name}</strong> ({d.generic_name})
+                                      <div>
+                                        <strong>{d.brand_name}</strong> {d.generic_name ? `(${d.generic_name})` : ''}
+                                        {d.rxcui && (
+                                          <span style={{ fontSize: '0.7rem', color: '#93c5fd', marginLeft: 6 }}>
+                                            RxCUI: {d.rxcui}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span
+                                        style={{
+                                          fontSize: '0.65rem',
+                                          padding: '2px 6px',
+                                          borderRadius: 4,
+                                          background: d.source === 'rxnorm' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                                          color: d.source === 'rxnorm' ? '#38bdf8' : 'var(--text-sub)',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {d.source === 'rxnorm' ? 'NLM RxNorm' : 'Catalog'}
+                                      </span>
                                     </div>
                                   ))}
                                 </div>

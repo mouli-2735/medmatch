@@ -142,6 +142,49 @@ class GeminiOCRReader:
         except Exception as e:
             return False, str(e)
 
+    def detect_orientation(self, image_bgr: Any) -> Tuple[Optional[int], bool]:
+        """
+        Uses a small low-res (<= 512px) Gemini call to determine rotation needed to make image upright.
+        Returns: (rotation_needed_degrees, is_confident)
+        Where rotation_needed_degrees is 0, 90, 180, or 270.
+        """
+        if not self.api_key or not self.client:
+            return None, False
+
+        try:
+            import cv2
+            h, w = image_bgr.shape[:2]
+            scale = 512.0 / max(h, w)
+            thumb = cv2.resize(image_bgr, (int(round(w * scale)), int(round(h * scale))))
+            _, enc = cv2.imencode(".jpg", thumb, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            thumb_bytes = enc.tobytes()
+
+            prompt = (
+                "Analyze the orientation of this medical prescription document.\n"
+                "Determine how many degrees CLOCKWISE the image needs to be rotated so it is upright, legible, and reads from top to bottom.\n"
+                "Return ONLY valid JSON: {\"rotate_clockwise\": 0 | 90 | 180 | 270}"
+            )
+
+            from google.genai import types
+            resp = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[
+                    types.Part.from_bytes(data=thumb_bytes, mime_type="image/jpeg"),
+                    prompt
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
+            )
+            data = json.loads(resp.text)
+            rot = int(data.get("rotate_clockwise", data.get("orientation", 0)))
+            if rot in (0, 90, 180, 270):
+                return rot, True
+            return None, False
+        except Exception:
+            return None, False
+
     def read_prescription_page(
         self,
         image_bytes: bytes,
