@@ -189,6 +189,11 @@ class MedMatchPipeline:
         # Fallback to OpenCV line segmentation if no usable boxes returned
         if not line_items:
             segmented = self.quality_processor.segment_lines(deskewed_img, crops_out_dir, pid)
+            if self.quality_processor.last_segmentation_warning:
+                overall_vision_msg = (
+                    (overall_vision_msg + "; " if overall_vision_msg else "")
+                    + self.quality_processor.last_segmentation_warning
+                )
             for idx, (crop_filename, bbox) in enumerate(segmented):
                 crop_full_path = crops_out_dir / crop_filename
                 ocr_line = self.ocr_reader.read_line_crop(
@@ -199,6 +204,24 @@ class MedMatchPipeline:
                     overall_vision_status = "service_unavailable"
                     overall_vision_msg = ocr_line.service_error_detail
                 line_items.append((crop_filename, bbox, ocr_line))
+
+        # If no lines found (e.g. blank page): return rejected response
+        if not line_items:
+            quality.passed = False
+            quality.message = "No handwriting found. Retake the photo or crop manually."
+            return PrescriptionResponse(
+                prescription_id=pid,
+                original_filename=image_path.name,
+                image_url=f"/static/uploads/{image_path.name}",
+                quality_check=quality,
+                lines=[],
+                total_lines=0,
+                status="rejected",
+                all_can_confirm=False,
+                vision_ai_status=overall_vision_status,
+                vision_ai_message="No handwriting found. Retake the photo or crop manually.",
+                created_at=datetime.now(timezone.utc).isoformat()
+            )
 
         # 4, 5, 6, 7, 8, 9: Process each line item
         processed_lines: List[ProcessedLine] = []
