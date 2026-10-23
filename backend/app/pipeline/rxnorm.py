@@ -148,7 +148,7 @@ class RxNormClient:
                     is_exact=False,
                     candidates=[],
                     source="NLM RxNorm",
-                    message="Not listed in US RxNorm catalog. May be a regional formulation or Indian brand (e.g. NLEM/Jan Aushadhi). Pharmacist review required."
+                    message="not found in RxNorm (US database)"
                 )
                 self._set_in_cache(cache_key, res)
                 return res
