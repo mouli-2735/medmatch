@@ -31,8 +31,16 @@ import {
   Activity,
   Filter,
   CheckCheck,
-  Maximize2
+  Maximize2,
+  HeartPulse,
+  Award,
+  Sparkle,
+  Compass,
+  Target
 } from 'lucide-react';
+
+import ThreeDMedicalScene from './components/ThreeDMedicalScene';
+import DoctorAvatarAssistant from './components/DoctorAvatarAssistant';
 
 const API_BASE = '';
 
@@ -59,8 +67,12 @@ export default function App() {
   const [activeFilterTab, setActiveFilterTab] = useState('all'); // 'all' | 'red' | 'lookalike' | 'confirmed'
   const [auditLog, setAuditLog] = useState([]);
 
+  // 3D Parallax Tilt for Hero Tablet Card
+  const [tiltStyle, setTiltStyle] = useState({});
+
   const fileInputRef = useRef(null);
   const dropdownRef = useRef(null);
+  const heroCardRef = useRef(null);
 
   useEffect(() => {
     fetchSamples();
@@ -84,6 +96,28 @@ export default function App() {
     } catch (e) {
       console.error('Error fetching clinical cases:', e);
     }
+  };
+
+  const handleHeroMouseMove = (e) => {
+    if (!heroCardRef.current) return;
+    const rect = heroCardRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = ((y - centerY) / centerY) * -8;
+    const rotateY = ((x - centerX) / centerX) * 8;
+    setTiltStyle({
+      transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`,
+      transition: 'transform 0.1s ease',
+    });
+  };
+
+  const handleHeroMouseLeave = () => {
+    setTiltStyle({
+      transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
+      transition: 'transform 0.5s ease',
+    });
   };
 
   const handleFileUpload = async (file) => {
@@ -159,7 +193,7 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString(),
       action,
       detail,
-      user: 'Dr. Sarah Jenkins (R.Ph.)',
+      user: 'Dr. Alex Reed (Pharm.D)',
     };
     setAuditLog((prev) => [entry, ...prev]);
   };
@@ -228,8 +262,8 @@ export default function App() {
   const triggerCelebrationConfetti = () => {
     try {
       confetti({
-        particleCount: 100,
-        spread: 70,
+        particleCount: 110,
+        spread: 80,
         origin: { y: 0.6 },
         colors: ['#06b6d4', '#10b981', '#38bdf8', '#fbbf24', '#ffffff']
       });
@@ -303,7 +337,6 @@ export default function App() {
     return true;
   });
 
-  // Calculate CSS filters for preview image
   const getImageFilterStyle = () => {
     let filterString = '';
     if (imageFilter === 'contrast') filterString += 'contrast(190%) brightness(110%) saturate(120%) ';
@@ -317,12 +350,23 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      {/* 3D Three.js Floating Molecule Scene in Background */}
+      <ThreeDMedicalScene isScanning={loading} />
+
+      {/* Floating 3D Doctor Avatar Assistant */}
+      <DoctorAvatarAssistant
+        activePrescription={activePrescription}
+        loading={loading}
+        processingStage={processingStage}
+        hoveredLineId={hoveredLineId}
+      />
+
       {/* Top Clinical Workstation Header with Animated ECG Pulse */}
       <header
         style={{
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(7, 11, 22, 0.88)',
+          background: 'rgba(7, 11, 22, 0.92)',
           backdropFilter: 'blur(20px)',
           position: 'sticky',
           top: 0,
@@ -502,39 +546,136 @@ export default function App() {
       </header>
 
       {/* Main Workspace Stage */}
-      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1 }}>
-        {/* Upload Hero Section (Shown when no prescription loaded) */}
+      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1, zIndex: 10 }}>
+        {/* EDITORIAL HERO SECTION (Modeled after reference layout with Doctor Tablet Desk 3D Tilt) */}
         {!activePrescription && (
-          <div style={{ maxWidth: 960, margin: '20px auto 40px' }}>
-            {/* Hero Header */}
-            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div>
+            {/* Top Interactive Editorial Banner */}
+            <div
+              className="glass-panel"
+              style={{
+                marginBottom: 36,
+                padding: '24px',
+                borderRadius: 24,
+                background: 'rgba(12, 19, 36, 0.85)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'grid',
+                gridTemplateColumns: '1.2fr 1fr',
+                gap: 36,
+                alignItems: 'center',
+              }}
+            >
+              {/* Left: 3D Tilting Tablet Desk Card */}
               <div
+                ref={heroCardRef}
+                onMouseMove={handleHeroMouseMove}
+                onMouseLeave={handleHeroMouseLeave}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 14px',
-                  borderRadius: 9999,
-                  background: 'rgba(6, 182, 212, 0.1)',
-                  border: '1px solid rgba(6, 182, 212, 0.25)',
-                  color: '#38bdf8',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  marginBottom: 16,
+                  borderRadius: 20,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(6, 182, 212, 0.25)',
+                  cursor: 'pointer',
+                  ...tiltStyle,
                 }}
+                onClick={() => fileInputRef.current?.click()}
+                title="Click to scan prescription on doctor's digital tablet"
               >
-                <Activity size={15} />
-                <span>INTELLIGENT PRESCRIPTION VERIFICATION WORKSTATION</span>
+                <img
+                  src="/assets/doctor_tablet_desk.jpg"
+                  alt="Doctor Prescription Tablet Desk"
+                  style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 16,
+                    left: 16,
+                    background: 'rgba(4, 8, 18, 0.75)',
+                    backdropFilter: 'blur(10px)',
+                    padding: '6px 14px',
+                    borderRadius: 9999,
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: '#38bdf8',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <Sparkles size={13} color="#06b6d4" />
+                  <span>3D CLINICAL INGESTION TABLET</span>
+                </div>
+                {loading && <div className="laser-scanner-line" />}
               </div>
-              <h2 style={{ fontSize: '2.3rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 12 }}>
-                High-Precision Clinical Handwriting Ingestion
-              </h2>
-              <p style={{ fontSize: '0.96rem', color: 'var(--text-muted)', maxWidth: 640, margin: '0 auto', lineHeight: 1.6 }}>
-                Upload doctor prescriptions, outpatient slips, or handwritten order sheets. Automatically verified against the Indian National List of Essential Medicines with sound-alike hazard safeguards.
-              </p>
+
+              {/* Right: Editorial Typography & Actions */}
+              <div style={{ padding: '12px 10px' }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 14px',
+                    borderRadius: 9999,
+                    background: 'rgba(6, 182, 212, 0.12)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    color: '#38bdf8',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    marginBottom: 16,
+                  }}
+                >
+                  <Stethoscope size={15} />
+                  <span>MEDMATCH RX CLINICAL INGESTION</span>
+                </div>
+
+                <h2
+                  style={{
+                    fontSize: '2.5rem',
+                    fontWeight: 800,
+                    letterSpacing: '-0.03em',
+                    lineHeight: 1.15,
+                    marginBottom: 16,
+                    color: '#ffffff',
+                  }}
+                >
+                  Precision in Every Script. <br />
+                  <span style={{ color: '#06b6d4' }}>Clinical Pharmacist AI.</span>
+                </h2>
+
+                <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 24 }}>
+                  Turn illegible doctor handwriting into standardized, error-free clinical orders. Cross-checked against 91 NLEM essential medicines and verified against high-risk Look-Alike Sound-Alike confusion hazards in real time.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: '12px 26px', fontSize: '0.92rem' }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload size={18} /> Ingest Prescription
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '12px 22px', fontSize: '0.92rem' }}
+                    onClick={() => loadSample('rx_001')}
+                  >
+                    <ClipboardCheck size={18} color="#06b6d4" /> Run Clean Demo
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '12px 22px', fontSize: '0.92rem' }}
+                    onClick={() => loadSample('rx_006')}
+                  >
+                    <AlertOctagon size={18} color="#ef4444" /> Test LASA Hazard
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Prescription Ingestion Dropzone with Animated Laser Scan */}
+            {/* Prescription Drag & Drop Upload Zone */}
             <div
               className="glass-panel glass-panel-hoverable"
               onDragOver={(e) => e.preventDefault()}
@@ -543,12 +684,13 @@ export default function App() {
                 if (e.dataTransfer.files?.[0]) handleFileUpload(e.dataTransfer.files[0]);
               }}
               style={{
-                padding: '52px 32px',
+                padding: '48px 32px',
                 textAlign: 'center',
                 position: 'relative',
                 overflow: 'hidden',
                 border: '2px dashed rgba(6, 182, 212, 0.35)',
                 cursor: 'pointer',
+                marginBottom: 36,
               }}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -567,27 +709,27 @@ export default function App() {
 
               <div
                 style={{
-                  width: 80,
-                  height: 80,
+                  width: 76,
+                  height: 76,
                   borderRadius: 22,
                   background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.18) 0%, rgba(2, 132, 199, 0.3) 100%)',
                   border: '1px solid rgba(6, 182, 212, 0.45)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  margin: '0 auto 20px',
+                  margin: '0 auto 18px',
                   color: '#06b6d4',
                   boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)',
                 }}
               >
-                <Upload size={36} />
+                <Upload size={34} />
               </div>
 
-              <h3 style={{ fontSize: '1.38rem', fontWeight: 800, marginBottom: 8, color: '#f8fafc' }}>
-                Drag & Drop Handwritten Prescription
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: 8, color: '#f8fafc' }}>
+                Drag & Drop Handwritten Prescription Here
               </h3>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 24 }}>
-                Supports JPG, PNG, WEBP, or direct camera captures. Automatically deskewed and enhanced.
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 22 }}>
+                Supports JPG, PNG, WEBP, or phone camera snapshots. Auto-deskewed and enhanced.
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
@@ -600,7 +742,7 @@ export default function App() {
                     fileInputRef.current?.click();
                   }}
                 >
-                  <FileText size={18} /> Select Image File
+                  <FileText size={18} /> Choose Image File
                 </button>
                 <button
                   id="btn-camera-capture"
@@ -611,15 +753,15 @@ export default function App() {
                     fileInputRef.current?.click();
                   }}
                 >
-                  <Camera size={18} /> Snap Photo
+                  <Camera size={18} /> Camera Snap
                 </button>
               </div>
 
-              {/* Multi-Stage Loading Indicator with Scanning Waves */}
+              {/* Multi-Stage Loading Indicator */}
               {loading && (
                 <div
                   style={{
-                    marginTop: 32,
+                    marginTop: 30,
                     padding: '16px 26px',
                     borderRadius: 14,
                     background: 'rgba(6, 182, 212, 0.12)',
@@ -659,33 +801,114 @@ export default function App() {
               )}
             </div>
 
-            {/* Quick Test Case Chips */}
-            <div style={{ marginTop: 28, textAlign: 'center' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 700, marginRight: 12 }}>
-                OR RUN CLINICAL TEST CASES:
-              </span>
-              <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
-                {samples.map((s) => (
-                  <button
-                    key={s.id}
-                    className="btn btn-secondary fast-fix-pill"
-                    style={{ padding: '7px 16px', fontSize: '0.82rem', borderRadius: 9999 }}
-                    onClick={() => loadSample(s.id)}
-                  >
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        background:
-                          s.category === 'clean' ? '#10b981' :
-                          s.category === 'lookalike' ? '#ef4444' :
-                          s.category === 'messy' ? '#f59e0b' : '#94a3b8',
-                      }}
-                    />
-                    <span>{s.name}</span>
-                  </button>
-                ))}
+            {/* THREE SECTION CARDS (Modeled like Vision / Mission / Doctor Profile from reference image) */}
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#06b6d4', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                CLINICAL EXCELLENCE & STANDARDS
+              </div>
+              <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#f8fafc', marginTop: 4 }}>
+                Hospital Pharmacopeia Ecosystem
+              </h3>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginBottom: 40 }}>
+              {/* Card 1: Our Clinical Vision */}
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '28px',
+                  borderRadius: 20,
+                  background: 'rgba(16, 185, 129, 0.05)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#10b981',
+                    marginBottom: 16,
+                  }}
+                >
+                  <Compass size={24} />
+                </div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: 10 }}>
+                  Our Clinical Vision
+                </h4>
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Eliminate preventable medication dispensing errors caused by unreadable handwriting in ambulatory clinics and hospital outpatient pharmacies across India.
+                </p>
+              </div>
+
+              {/* Card 2: Our Safety Mission */}
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '28px',
+                  borderRadius: 20,
+                  background: 'rgba(6, 182, 212, 0.05)',
+                  border: '1px solid rgba(6, 182, 212, 0.25)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: 'rgba(6, 182, 212, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#06b6d4',
+                    marginBottom: 16,
+                  }}
+                >
+                  <Target size={24} />
+                </div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: 10 }}>
+                  Our Safety Mission
+                </h4>
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Embed automated Look-Alike Sound-Alike (LASA) safety checks and NLEM dose/frequency validation directly into the pharmacist workflow before any pill is dispensed.
+                </p>
+              </div>
+
+              {/* Card 3: Doctor & Pharmacist Profile */}
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '28px',
+                  borderRadius: 20,
+                  background: 'rgba(139, 92, 246, 0.05)',
+                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: 'rgba(139, 92, 246, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#a78bfa',
+                    marginBottom: 16,
+                  }}
+                >
+                  <Award size={24} />
+                </div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: 10 }}>
+                  Clinical Pharmacist Team
+                </h4>
+                <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Overseen by Dr. Alex Reed (Pharm.D, BCPS) and hospital pharmacists. Every override is recorded with an immutable audit hash for full regulatory compliance.
+                </p>
               </div>
             </div>
           </div>
@@ -953,7 +1176,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Prescription Image Box with Laser Scan on Hover */}
+                  {/* Prescription Image Box with Line Hover Highlights */}
                   <div
                     style={{
                       borderRadius: 12,
@@ -1852,7 +2075,7 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                 <span style={{ color: 'var(--text-sub)' }}>Pharmacist Signature:</span>
-                <span style={{ color: '#f8fafc', fontWeight: 600 }}>LIC# IN-PHARM-88219 (Logged to Audit Table)</span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>LIC# IN-PHARM-88219 (Dr. Alex Reed, Pharm.D)</span>
               </div>
             </div>
 
@@ -1899,11 +2122,12 @@ export default function App() {
       <footer
         style={{
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          padding: '16px 28px',
+          padding: '18px 28px',
           textAlign: 'center',
           fontSize: '0.78rem',
           color: 'var(--text-sub)',
-          background: 'rgba(8, 13, 26, 0.6)',
+          background: 'rgba(8, 13, 26, 0.7)',
+          zIndex: 10,
         }}
       >
         MedMatch Rx™ · Hospital Clinical Pharmacist Ingestion Workstation · NLEM Pharmacopeia Verified · Real-Time LASA Prevention
