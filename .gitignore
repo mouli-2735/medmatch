@@ -1,0 +1,23 @@
+# Environments & keys
+.env
+.env.local
+.venv/
+env/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite
+*.db
+
+# Node
+node_modules/
+dist/
+build/
+.npm/
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

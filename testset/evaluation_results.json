@@ -1,0 +1,19 @@
+{
+  "benchmark_timestamp": "2026-10-23 15:42:22",
+  "total_prescriptions": 28,
+  "passed_qc_prescriptions": 22,
+  "rejected_qc_prescriptions": 6,
+  "qc_rejection_rate_percent": 21.4,
+  "total_lines_analyzed": 48,
+  "legible_drug_lines": 47,
+  "top_1_drug_accuracy_percent": 100.0,
+  "top_3_drug_accuracy_percent": 100.0,
+  "dose_field_accuracy_percent": 97.9,
+  "frequency_field_accuracy_percent": 97.9,
+  "duration_field_accuracy_percent": 97.9,
+  "overall_field_accuracy_percent": 97.9,
+  "lookalike_hazard_detection_rate_percent": 83.3,
+  "unreadable_safety_catch_rate_percent": 100.0,
+  "average_pipeline_latency_ms": 131.1,
+  "average_pharmacist_review_seconds": 14.2
+}

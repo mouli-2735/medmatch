@@ -1,0 +1,1757 @@
+{
+  "dataset_name": "MedMatch Rx Synthetic Prescription Benchmark",
+  "total_prescriptions": 28,
+  "created_date": "2026-10-23",
+  "prescriptions": [
+    {
+      "prescription_id": "rx_001",
+      "filename": "rx_001.png",
+      "category": "clean",
+      "doctor": "Dr. A. Sharma, MD",
+      "clinic": "City Care Hospital, Delhi",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_001_line_1.png",
+          "crop_relative_path": "crops/rx_001_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Augmentin",
+            "dose": "625mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Augmentin",
+            "Augmentix",
+            "Autmentin"
+          ],
+          "dose_raw": "625mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_001_line_2.png",
+          "crop_relative_path": "crops/rx_001_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pantocid",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Pantocid",
+            "Pantocix",
+            "Pattocid"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 3,
+          "crop": "rx_001_line_3.png",
+          "crop_relative_path": "crops/rx_001_line_3.png",
+          "bbox": [
+            60,
+            390,
+            740,
+            455
+          ],
+          "ground_truth": {
+            "drug": "Dolo 650",
+            "dose": "650mg",
+            "frequency": "SOS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Dolo 650",
+            "Dolo 65x",
+            "Doto 650"
+          ],
+          "dose_raw": "650mg",
+          "freq_raw": "SOS",
+          "duration_raw": "3d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_002",
+      "filename": "rx_002.png",
+      "category": "clean",
+      "doctor": "Dr. Rajesh Gupta, MBBS",
+      "clinic": "Gupta Clinic, Bangalore",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_002_line_1.png",
+          "crop_relative_path": "crops/rx_002_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Azithral",
+            "dose": "500mg",
+            "frequency": "OD",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Azithral",
+            "Azithrax",
+            "Aztthral"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "OD",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_002_line_2.png",
+          "crop_relative_path": "crops/rx_002_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Montair LC",
+            "dose": "10mg/5mg",
+            "frequency": "0-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Montair LC",
+            "Montair Lx",
+            "Mottair LC"
+          ],
+          "dose_raw": "10mg/5mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_003",
+      "filename": "rx_003.png",
+      "category": "clean",
+      "doctor": "Dr. Sneha Verma, MD",
+      "clinic": "Metro Heart Center, Mumbai",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_003_line_1.png",
+          "crop_relative_path": "crops/rx_003_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Telma",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Telma",
+            "Telmx",
+            "Tetma"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_003_line_2.png",
+          "crop_relative_path": "crops/rx_003_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Ecosprin",
+            "dose": "75mg",
+            "frequency": "0-1-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Ecosprin",
+            "Ecosprix",
+            "Ectsprin"
+          ],
+          "dose_raw": "75mg",
+          "freq_raw": "0-1-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 3,
+          "crop": "rx_003_line_3.png",
+          "crop_relative_path": "crops/rx_003_line_3.png",
+          "bbox": [
+            60,
+            390,
+            740,
+            455
+          ],
+          "ground_truth": {
+            "drug": "Rosuvas",
+            "dose": "10mg",
+            "frequency": "0-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Rosuvas",
+            "Rosuvax",
+            "Rotuvas"
+          ],
+          "dose_raw": "10mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_004",
+      "filename": "rx_004.png",
+      "category": "clean",
+      "doctor": "Dr. Vikram Seth, MS (Ortho)",
+      "clinic": "Orthopedic Center, Hyderabad",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_004_line_1.png",
+          "crop_relative_path": "crops/rx_004_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Combiflam",
+            "dose": "400mg/325mg",
+            "frequency": "1-0-1",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Combiflam",
+            "Combiflax",
+            "Cotbiflam"
+          ],
+          "dose_raw": "400mg/325mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_004_line_2.png",
+          "crop_relative_path": "crops/rx_004_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pan D",
+            "dose": "40mg/30mg",
+            "frequency": "1-0-0",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Pan D",
+            "Pan x",
+            "Pat D"
+          ],
+          "dose_raw": "40mg/30mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_005",
+      "filename": "rx_005.png",
+      "category": "clean",
+      "doctor": "Dr. Priya Nair, MD (Pediatrics)",
+      "clinic": "Child Health Clinic, Chennai",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_005_line_1.png",
+          "crop_relative_path": "crops/rx_005_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Calpol",
+            "dose": "250mg/5ml",
+            "frequency": "TDS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Calpol",
+            "Calpox",
+            "Catpol"
+          ],
+          "dose_raw": "250mg/5ml",
+          "freq_raw": "TDS",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_005_line_2.png",
+          "crop_relative_path": "crops/rx_005_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Cetirizine",
+            "dose": "5mg",
+            "frequency": "0-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Cetirizine",
+            "Cetirizinx",
+            "Cetirizine"
+          ],
+          "dose_raw": "5mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_006",
+      "filename": "rx_006.png",
+      "category": "lookalike",
+      "doctor": "Dr. K. Raman, MD",
+      "clinic": "Apollo Polyclinic, Pune",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_006_line_1.png",
+          "crop_relative_path": "crops/rx_006_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Celebrex",
+            "dose": "200mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Celebrex",
+            "Celebres",
+            "Cetebrex"
+          ],
+          "dose_raw": "200mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_006_line_2.png",
+          "crop_relative_path": "crops/rx_006_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pantocid",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Pantocid",
+            "Pantocix",
+            "Pattocid"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_007",
+      "filename": "rx_007.png",
+      "category": "lookalike",
+      "doctor": "Dr. M. Roy, MD (Psychiatry)",
+      "clinic": "Mind Clinic, Kolkata",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_007_line_1.png",
+          "crop_relative_path": "crops/rx_007_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Celexa",
+            "dose": "20mg",
+            "frequency": "0-0-1",
+            "duration": "14d"
+          },
+          "guesses": [
+            "Celexa",
+            "Celexx",
+            "Cetexa"
+          ],
+          "dose_raw": "20mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "14d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_007_line_2.png",
+          "crop_relative_path": "crops/rx_007_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Lonazep",
+            "dose": "0.5mg",
+            "frequency": "0-0-1",
+            "duration": "7d"
+          },
+          "guesses": [
+            "Lonazep",
+            "Lonazex",
+            "Lotazep"
+          ],
+          "dose_raw": "0.5mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "7d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_008",
+      "filename": "rx_008.png",
+      "category": "lookalike",
+      "doctor": "Dr. S. K. Bose, MD",
+      "clinic": "Woodlands Medical, Kolkata",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_008_line_1.png",
+          "crop_relative_path": "crops/rx_008_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Lasix",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "7d"
+          },
+          "guesses": [
+            "Lasix",
+            "Lasis",
+            "Latix"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "7d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_008_line_2.png",
+          "crop_relative_path": "crops/rx_008_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Cardace",
+            "dose": "5mg",
+            "frequency": "1-0-0",
+            "duration": "14d"
+          },
+          "guesses": [
+            "Cardace",
+            "Cardacx",
+            "Catdace"
+          ],
+          "dose_raw": "5mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "14d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_009",
+      "filename": "rx_009.png",
+      "category": "lookalike",
+      "doctor": "Dr. T. Joseph, MD",
+      "clinic": "Lakeshore Hospital, Kochi",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_009_line_1.png",
+          "crop_relative_path": "crops/rx_009_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Losec",
+            "dose": "20mg",
+            "frequency": "1-0-0",
+            "duration": "14d"
+          },
+          "guesses": [
+            "Losec",
+            "Losex",
+            "Lotec"
+          ],
+          "dose_raw": "20mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "14d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_009_line_2.png",
+          "crop_relative_path": "crops/rx_009_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Domstal",
+            "dose": "10mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Domstal",
+            "Domstax",
+            "Dotstal"
+          ],
+          "dose_raw": "10mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_010",
+      "filename": "rx_010.png",
+      "category": "lookalike",
+      "doctor": "Dr. H. Mehta, MD",
+      "clinic": "Sterling Hospital, Ahmedabad",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_010_line_1.png",
+          "crop_relative_path": "crops/rx_010_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Zantac",
+            "dose": "150mg",
+            "frequency": "1-0-1",
+            "duration": "7d"
+          },
+          "guesses": [
+            "Zantac",
+            "Zantax",
+            "Zattac"
+          ],
+          "dose_raw": "150mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "7d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_010_line_2.png",
+          "crop_relative_path": "crops/rx_010_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Omez",
+            "dose": "20mg",
+            "frequency": "1-0-0",
+            "duration": "14d"
+          },
+          "guesses": [
+            "Omez",
+            "Omex",
+            "Omezol"
+          ],
+          "dose_raw": "20mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "14d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_011",
+      "filename": "rx_011.png",
+      "category": "lookalike",
+      "doctor": "Dr. N. Iyer, MD",
+      "clinic": "Fortis Hospital, Bengaluru",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_011_line_1.png",
+          "crop_relative_path": "crops/rx_011_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Amaryl",
+            "dose": "2mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Amaryl",
+            "Amaryx",
+            "Amtryl"
+          ],
+          "dose_raw": "2mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_011_line_2.png",
+          "crop_relative_path": "crops/rx_011_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Glycomet",
+            "dose": "500mg",
+            "frequency": "1-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Glycomet",
+            "Glycomex",
+            "Gltcomet"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_012",
+      "filename": "rx_012.png",
+      "category": "messy",
+      "doctor": "Dr. R. Kapoor, MBBS",
+      "clinic": "Govt Civil Hospital, Chandigarh",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_012_line_1.png",
+          "crop_relative_path": "crops/rx_012_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Augmentin",
+            "dose": "625mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Augmentin",
+            "Augmentix",
+            "Autmentin"
+          ],
+          "dose_raw": "625mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_012_line_2.png",
+          "crop_relative_path": "crops/rx_012_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Crocin",
+            "dose": "650mg",
+            "frequency": "TDS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Crocin",
+            "Crocix",
+            "Crtcin"
+          ],
+          "dose_raw": "650mg",
+          "freq_raw": "TDS",
+          "duration_raw": "3d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_013",
+      "filename": "rx_013.png",
+      "category": "messy",
+      "doctor": "Dr. V. Prasad, MD",
+      "clinic": "Prasad Care Clinic, Lucknow",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_013_line_1.png",
+          "crop_relative_path": "crops/rx_013_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Met XL",
+            "dose": "25mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Met XL",
+            "Met Xx",
+            "Met XL"
+          ],
+          "dose_raw": "25mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_013_line_2.png",
+          "crop_relative_path": "crops/rx_013_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Cilacar",
+            "dose": "10mg",
+            "frequency": "0-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Cilacar",
+            "Cilacax",
+            "Citacar"
+          ],
+          "dose_raw": "10mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_014",
+      "filename": "rx_014.png",
+      "category": "messy",
+      "doctor": "Dr. P. Bansal, MS",
+      "clinic": "Bansal Nursing Home, Jaipur",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_014_line_1.png",
+          "crop_relative_path": "crops/rx_014_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Voveran",
+            "dose": "50mg",
+            "frequency": "BD",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Voveran",
+            "Voverax",
+            "Voteran"
+          ],
+          "dose_raw": "50mg",
+          "freq_raw": "BD",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_014_line_2.png",
+          "crop_relative_path": "crops/rx_014_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Rabeloc",
+            "dose": "20mg",
+            "frequency": "OD",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Rabeloc",
+            "Rabelox",
+            "Rateloc"
+          ],
+          "dose_raw": "20mg",
+          "freq_raw": "OD",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_015",
+      "filename": "rx_015.png",
+      "category": "messy",
+      "doctor": "Dr. A. Sen, MD",
+      "clinic": "Peerless Hospital, Kolkata",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_015_line_1.png",
+          "crop_relative_path": "crops/rx_015_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Thyronorm",
+            "dose": "50mcg",
+            "frequency": "1-0-0",
+            "duration": "60d"
+          },
+          "guesses": [
+            "Thyronorm",
+            "Thyronorx",
+            "Thtronorm"
+          ],
+          "dose_raw": "50mcg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "60d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_015_line_2.png",
+          "crop_relative_path": "crops/rx_015_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Shelcal 500",
+            "dose": "500mg",
+            "frequency": "0-1-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Shelcal 500",
+            "Shelcal 50x",
+            "Shtlcal 500"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "0-1-0",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_016",
+      "filename": "rx_016.png",
+      "category": "messy",
+      "doctor": "Dr. S. Kulkarni, MD",
+      "clinic": "KEM Clinic, Pune",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_016_line_1.png",
+          "crop_relative_path": "crops/rx_016_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Taxim O",
+            "dose": "200mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Taxim O",
+            "Taxim x",
+            "Tatim O"
+          ],
+          "dose_raw": "200mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_016_line_2.png",
+          "crop_relative_path": "crops/rx_016_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Dolo 650",
+            "dose": "650mg",
+            "frequency": "SOS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Dolo 650",
+            "Dolo 65x",
+            "Doto 650"
+          ],
+          "dose_raw": "650mg",
+          "freq_raw": "SOS",
+          "duration_raw": "3d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_017",
+      "filename": "rx_017.png",
+      "category": "messy",
+      "doctor": "Dr. J. Fernandez, MD",
+      "clinic": "Holy Family, Goa",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_017_line_1.png",
+          "crop_relative_path": "crops/rx_017_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Cifran",
+            "dose": "500mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Cifran",
+            "Cifrax",
+            "Citran"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_017_line_2.png",
+          "crop_relative_path": "crops/rx_017_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pantocid",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "7d"
+          },
+          "guesses": [
+            "Pantocid",
+            "Pantocix",
+            "Pattocid"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "7d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_018",
+      "filename": "rx_018.png",
+      "category": "messy",
+      "doctor": "Dr. N. Joshi, MD",
+      "clinic": "Deccan Medical, Nagpur",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_018_line_1.png",
+          "crop_relative_path": "crops/rx_018_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Allegra",
+            "dose": "120mg",
+            "frequency": "0-0-1",
+            "duration": "10d"
+          },
+          "guesses": [
+            "Allegra",
+            "Allegrx",
+            "Altegra"
+          ],
+          "dose_raw": "120mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "10d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_018_line_2.png",
+          "crop_relative_path": "crops/rx_018_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Budecort",
+            "dose": "200mcg",
+            "frequency": "1-0-1",
+            "duration": "14d"
+          },
+          "guesses": [
+            "Budecort",
+            "Budecorx",
+            "Butecort"
+          ],
+          "dose_raw": "200mcg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "14d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_019",
+      "filename": "rx_019.png",
+      "category": "blurry",
+      "doctor": "Dr. B. Das, MD",
+      "clinic": "AMRI Hospital, Bhubaneswar",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_019_line_1.png",
+          "crop_relative_path": "crops/rx_019_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Augmentin",
+            "dose": "625mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Augmentin",
+            "Augmentix",
+            "Autmentin"
+          ],
+          "dose_raw": "625mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_019_line_2.png",
+          "crop_relative_path": "crops/rx_019_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Dolo 650",
+            "dose": "650mg",
+            "frequency": "TDS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Dolo 650",
+            "Dolo 65x",
+            "Doto 650"
+          ],
+          "dose_raw": "650mg",
+          "freq_raw": "TDS",
+          "duration_raw": "3d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_020",
+      "filename": "rx_020.png",
+      "category": "blurry",
+      "doctor": "Dr. C. Chawla, MD",
+      "clinic": "Chawla Polyclinic, Amritsar",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_020_line_1.png",
+          "crop_relative_path": "crops/rx_020_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Azithral",
+            "dose": "500mg",
+            "frequency": "OD",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Azithral",
+            "Azithrax",
+            "Aztthral"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "OD",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_020_line_2.png",
+          "crop_relative_path": "crops/rx_020_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Limcee",
+            "dose": "500mg",
+            "frequency": "OD",
+            "duration": "10d"
+          },
+          "guesses": [
+            "Limcee",
+            "Limcex",
+            "Litcee"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "OD",
+          "duration_raw": "10d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_021",
+      "filename": "rx_021.png",
+      "category": "dark",
+      "doctor": "Dr. G. Reddy, MD",
+      "clinic": "Yashoda Hospital, Hyderabad",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_021_line_1.png",
+          "crop_relative_path": "crops/rx_021_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Telma",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Telma",
+            "Telmx",
+            "Tetma"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_021_line_2.png",
+          "crop_relative_path": "crops/rx_021_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Met XL",
+            "dose": "50mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Met XL",
+            "Met Xx",
+            "Met XL"
+          ],
+          "dose_raw": "50mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_022",
+      "filename": "rx_022.png",
+      "category": "dark",
+      "doctor": "Dr. T. Ghosh, MBBS",
+      "clinic": "Ghosh Clinic, Siliguri",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_022_line_1.png",
+          "crop_relative_path": "crops/rx_022_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Glycomet",
+            "dose": "500mg",
+            "frequency": "1-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Glycomet",
+            "Glycomex",
+            "Gltcomet"
+          ],
+          "dose_raw": "500mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_022_line_2.png",
+          "crop_relative_path": "crops/rx_022_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Januvia",
+            "dose": "50mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Januvia",
+            "Januvix",
+            "Jatuvia"
+          ],
+          "dose_raw": "50mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_023",
+      "filename": "rx_023.png",
+      "category": "glare",
+      "doctor": "Dr. S. Nair, MD",
+      "clinic": "Aster Medcity, Kochi",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_023_line_1.png",
+          "crop_relative_path": "crops/rx_023_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Celebrex",
+            "dose": "200mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Celebrex",
+            "Celebres",
+            "Cetebrex"
+          ],
+          "dose_raw": "200mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_023_line_2.png",
+          "crop_relative_path": "crops/rx_023_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pan D",
+            "dose": "40mg/30mg",
+            "frequency": "1-0-0",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Pan D",
+            "Pan x",
+            "Pat D"
+          ],
+          "dose_raw": "40mg/30mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_024",
+      "filename": "rx_024.png",
+      "category": "glare",
+      "doctor": "Dr. K. Singhania, MS",
+      "clinic": "Singhania Bone Clinic, Kanpur",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_024_line_1.png",
+          "crop_relative_path": "crops/rx_024_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Ultracet",
+            "dose": "37.5mg/325mg",
+            "frequency": "1-0-1",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Ultracet",
+            "Ultracex",
+            "Ultracet"
+          ],
+          "dose_raw": "37.5mg/325mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_024_line_2.png",
+          "crop_relative_path": "crops/rx_024_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Pantocid",
+            "dose": "40mg",
+            "frequency": "1-0-0",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Pantocid",
+            "Pantocix",
+            "Pattocid"
+          ],
+          "dose_raw": "40mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_025",
+      "filename": "rx_025.png",
+      "category": "edge_case",
+      "doctor": "Dr. R. Alva, MD (Geriatrics)",
+      "clinic": "Manipal Hospital, Mangalore",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_025_line_1.png",
+          "crop_relative_path": "crops/rx_025_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Cardace",
+            "dose": "2.5mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Cardace",
+            "Cardacx",
+            "Catdace"
+          ],
+          "dose_raw": "2.5mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_025_line_2.png",
+          "crop_relative_path": "crops/rx_025_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Jardiance",
+            "dose": "10mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Jardiance",
+            "Jardiancx",
+            "Jatdiance"
+          ],
+          "dose_raw": "10mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 3,
+          "crop": "rx_025_line_3.png",
+          "crop_relative_path": "crops/rx_025_line_3.png",
+          "bbox": [
+            60,
+            390,
+            740,
+            455
+          ],
+          "ground_truth": {
+            "drug": "Atorva",
+            "dose": "20mg",
+            "frequency": "0-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Atorva",
+            "Atorvx",
+            "Attrva"
+          ],
+          "dose_raw": "20mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 4,
+          "crop": "rx_025_line_4.png",
+          "crop_relative_path": "crops/rx_025_line_4.png",
+          "bbox": [
+            60,
+            475,
+            740,
+            540
+          ],
+          "ground_truth": {
+            "drug": "Ecosprin",
+            "dose": "75mg",
+            "frequency": "0-1-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Ecosprin",
+            "Ecosprix",
+            "Ectsprin"
+          ],
+          "dose_raw": "75mg",
+          "freq_raw": "0-1-0",
+          "duration_raw": "30d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_026",
+      "filename": "rx_026.png",
+      "category": "edge_case",
+      "doctor": "Dr. I. Khan, MD",
+      "clinic": "Ruby General Hospital, Kolkata",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_026_line_1.png",
+          "crop_relative_path": "crops/rx_026_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Meftal Spas",
+            "dose": "500mg/10mg",
+            "frequency": "SOS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Meftal Spas",
+            "Meftal Spax",
+            "Mettal Spas"
+          ],
+          "dose_raw": "500mg/10mg",
+          "freq_raw": "SOS",
+          "duration_raw": "3d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_026_line_2.png",
+          "crop_relative_path": "crops/rx_026_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Emeset",
+            "dose": "4mg",
+            "frequency": "SOS",
+            "duration": "3d"
+          },
+          "guesses": [
+            "Emeset",
+            "Emesex",
+            "Emtset"
+          ],
+          "dose_raw": "4mg",
+          "freq_raw": "SOS",
+          "duration_raw": "3d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_027",
+      "filename": "rx_027.png",
+      "category": "edge_case",
+      "doctor": "Dr. P. Deshmukh, MD",
+      "clinic": "Lilavati Hospital, Mumbai",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_027_line_1.png",
+          "crop_relative_path": "crops/rx_027_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "unreadable",
+            "dose": "unknown",
+            "frequency": "unknown",
+            "duration": "unknown"
+          },
+          "guesses": [
+            "unreadable"
+          ],
+          "dose_raw": "",
+          "freq_raw": "",
+          "duration_raw": ""
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_027_line_2.png",
+          "crop_relative_path": "crops/rx_027_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Augmentin",
+            "dose": "625mg",
+            "frequency": "1-0-1",
+            "duration": "5d"
+          },
+          "guesses": [
+            "Augmentin",
+            "Augmentix",
+            "Autmentin"
+          ],
+          "dose_raw": "625mg",
+          "freq_raw": "1-0-1",
+          "duration_raw": "5d"
+        }
+      ]
+    },
+    {
+      "prescription_id": "rx_028",
+      "filename": "rx_028.png",
+      "category": "edge_case",
+      "doctor": "Dr. M. Swaminathan, MD",
+      "clinic": "Apollo Hospital, Chennai",
+      "lines": [
+        {
+          "line_id": 1,
+          "crop": "rx_028_line_1.png",
+          "crop_relative_path": "crops/rx_028_line_1.png",
+          "bbox": [
+            60,
+            220,
+            740,
+            285
+          ],
+          "ground_truth": {
+            "drug": "Urimax",
+            "dose": "0.4mg",
+            "frequency": "0-0-1",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Urimax",
+            "Urimas",
+            "Urtmax"
+          ],
+          "dose_raw": "0.4mg",
+          "freq_raw": "0-0-1",
+          "duration_raw": "30d"
+        },
+        {
+          "line_id": 2,
+          "crop": "rx_028_line_2.png",
+          "crop_relative_path": "crops/rx_028_line_2.png",
+          "bbox": [
+            60,
+            305,
+            740,
+            370
+          ],
+          "ground_truth": {
+            "drug": "Cilacar",
+            "dose": "10mg",
+            "frequency": "1-0-0",
+            "duration": "30d"
+          },
+          "guesses": [
+            "Cilacar",
+            "Cilacax",
+            "Citacar"
+          ],
+          "dose_raw": "10mg",
+          "freq_raw": "1-0-0",
+          "duration_raw": "30d"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+drug_1,drug_2,similarity_score,metaphone_match,risk_reason
+Celebrex,Celexa,0.88,YES,Celebrex (anti-inflammatory NSAID) vs Celexa (SSRI antidepressant). Critical confusable pair!
+Augmentin,Augmentan,0.88,YES,Augmentin (Amoxicillin-Clavulanate) vs Augmentan (plain Amoxicillin).
+Zantac,Xanax,0.88,YES,Zantac (H2 blocker antacid) vs Xanax (Alprazolam sedative/anxiolytic). Severe overdose risk.
+Losec,Lasix,0.88,YES,Losec (Omeprazole PPI) vs Lasix (Furosemide loop diuretic). Severe dehydration/electrolyte risk.
+Vinblastine,Vincristine,0.88,YES,"Fatal chemotherapy dosing confusion! Vincristine max 2mg, Vinblastine 10mg+."
+Amaryl,Reminyl,0.88,YES,Amaryl (Glimepiride antidiabetic) vs Reminyl (Galantamine dementia drug). Severe hypoglycemia risk.
+Metformin,Metronidazole,0.88,YES,Metformin (antidiabetic) vs Metronidazole (antibiotic/antiprotozoal).
+Pantocid,Paracetamol,0.88,YES,Pantocid (PPI antacid) vs Paracetamol (antipyretic analgesic).
+Taxim O,Taxim,0.88,YES,Taxim O (oral cefixime) vs Taxim (IV cefotaxime).
+Lonazep,Lorazepam,0.88,YES,Lonazep (Clonazepam) vs Lorazepam (Ativan). Dosing and duration differences.
+Azithral,Asthalin,0.62,PARTIAL,Phonetically or orthographically similar (Azithral vs Asthalin)
+Telma,Telma H,0.83,PARTIAL,Phonetically or orthographically similar (Telma vs Telma H)
+Glycomet,Glycomet GP,0.84,PARTIAL,Phonetically or orthographically similar (Glycomet vs Glycomet GP)
+Cardace,Jardiance,0.75,PARTIAL,Phonetically or orthographically similar (Cardace vs Jardiance)
