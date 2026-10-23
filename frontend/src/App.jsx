@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -18,13 +19,19 @@ import {
   Sparkles,
   Layers,
   ZoomIn,
-  Activity,
+  ZoomOut,
+  RotateCw,
   Sliders,
   Check,
   X,
   Stethoscope,
   ClipboardCheck,
-  Eye
+  Eye,
+  History,
+  Activity,
+  Filter,
+  CheckCheck,
+  Maximize2
 } from 'lucide-react';
 
 const API_BASE = '';
@@ -41,15 +48,23 @@ export default function App() {
   const [selectedCropPreview, setSelectedCropPreview] = useState(null);
   const [showCaseDropdown, setShowCaseDropdown] = useState(false);
   const [showDispenseModal, setShowDispenseModal] = useState(false);
+  const [showAuditDrawer, setShowAuditDrawer] = useState(false);
   const [processingStage, setProcessingStage] = useState('Analyzing optical quality...');
   
+  // Interactive Canvas Image Controls
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [imageFilter, setImageFilter] = useState('normal'); // 'normal' | 'contrast' | 'invert'
+  const [imageRotation, setImageRotation] = useState(0);
+  const [hoveredLineId, setHoveredLineId] = useState(null);
+  const [activeFilterTab, setActiveFilterTab] = useState('all'); // 'all' | 'red' | 'lookalike' | 'confirmed'
+  const [auditLog, setAuditLog] = useState([]);
+
   const fileInputRef = useRef(null);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
     fetchSamples();
     
-    // Close dropdown on outside click
     const handleOutsideClick = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setShowCaseDropdown(false);
@@ -76,13 +91,16 @@ export default function App() {
     setLoading(true);
     setUploadError(null);
     setActivePrescription(null);
+    setZoomLevel(1);
+    setImageFilter('normal');
+    setImageRotation(0);
     setProcessingStage('Inspecting blur, lighting & glare...');
 
     const stageTimer1 = setTimeout(() => {
       setProcessingStage('Segmenting prescription lines & deskewing...');
     }, 1200);
     const stageTimer2 = setTimeout(() => {
-      setProcessingStage('Transcribing handwriting & catalog matching...');
+      setProcessingStage('Neural handwriting transcription & NLEM catalog match...');
     }, 2800);
 
     const formData = new FormData();
@@ -101,6 +119,7 @@ export default function App() {
 
       const data = await res.json();
       setActivePrescription(data);
+      logAuditEvent('Ingestion', `Prescription #${data.prescription_id} uploaded and segmented (${data.lines?.length || 0} lines)`);
     } catch (e) {
       setUploadError(e.message);
     } finally {
@@ -114,6 +133,9 @@ export default function App() {
     setLoading(true);
     setUploadError(null);
     setShowCaseDropdown(false);
+    setZoomLevel(1);
+    setImageFilter('normal');
+    setImageRotation(0);
     setProcessingStage('Loading clinical case file...');
 
     try {
@@ -123,11 +145,23 @@ export default function App() {
       if (!res.ok) throw new Error('Failed to load clinical case');
       const data = await res.json();
       setActivePrescription(data);
+      logAuditEvent('Case Loaded', `Clinical case ${data.prescription_id} ingested for verification`);
     } catch (e) {
       setUploadError(e.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const logAuditEvent = (action, detail) => {
+    const entry = {
+      id: Date.now(),
+      timestamp: new Date().toLocaleTimeString(),
+      action,
+      detail,
+      user: 'Dr. Sarah Jenkins (R.Ph.)',
+    };
+    setAuditLog((prev) => [entry, ...prev]);
   };
 
   const handleConfirmLine = async (lineId, correctionData = null) => {
@@ -149,7 +183,6 @@ export default function App() {
         return;
       }
 
-      // Update state locally
       setActivePrescription((prev) => {
         const updatedLines = prev.lines.map((l) => {
           if (l.line_id === lineId) {
@@ -180,9 +213,28 @@ export default function App() {
         };
       });
 
+      if (correctionData) {
+        logAuditEvent('Line Override', `Line #${lineId} modified: ${correctionData.final_drug} (${correctionData.notes || 'Pharmacist correction'})`);
+      } else {
+        logAuditEvent('Line Approved', `Line #${lineId} verified and signed off`);
+      }
+
       setEditingLineId(null);
     } catch (e) {
       alert(`Error confirming line: ${e.message}`);
+    }
+  };
+
+  const triggerCelebrationConfetti = () => {
+    try {
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#06b6d4', '#10b981', '#38bdf8', '#fbbf24', '#ffffff']
+      });
+    } catch (e) {
+      // Graceful fallback
     }
   };
 
@@ -204,6 +256,8 @@ export default function App() {
         all_can_confirm: true,
       }));
 
+      logAuditEvent('Batch Approval', `Prescription #${activePrescription.prescription_id} fully approved and released to dispense queue`);
+      triggerCelebrationConfetti();
       setShowDispenseModal(true);
     } catch (e) {
       alert(`Error confirming prescription: ${e.message}`);
@@ -227,8 +281,13 @@ export default function App() {
     }
   };
 
+  // Metrics calculation
   const unreviewedRedCount = activePrescription?.lines?.filter(
     (l) => l.confidence.level === 'red' && l.status === 'pending'
+  ).length || 0;
+
+  const lookalikeCount = activePrescription?.lines?.filter(
+    (l) => l.lookalike?.is_flagged
   ).length || 0;
 
   const totalLines = activePrescription?.lines?.length || 0;
@@ -236,13 +295,34 @@ export default function App() {
     (l) => l.status === 'confirmed' || l.status === 'corrected'
   ).length || 0;
 
+  // Filtered Lines based on active tab
+  const filteredLines = (activePrescription?.lines || []).filter((l) => {
+    if (activeFilterTab === 'red') return l.confidence.level === 'red' && l.status === 'pending';
+    if (activeFilterTab === 'lookalike') return l.lookalike?.is_flagged;
+    if (activeFilterTab === 'confirmed') return l.status === 'confirmed' || l.status === 'corrected';
+    return true;
+  });
+
+  // Calculate CSS filters for preview image
+  const getImageFilterStyle = () => {
+    let filterString = '';
+    if (imageFilter === 'contrast') filterString += 'contrast(190%) brightness(110%) saturate(120%) ';
+    if (imageFilter === 'invert') filterString += 'invert(1) hue-rotate(180deg) contrast(150%) ';
+    return {
+      transform: `scale(${zoomLevel}) rotate(${imageRotation}deg)`,
+      filter: filterString.trim() || 'none',
+      transition: 'transform 0.25s ease, filter 0.25s ease',
+      transformOrigin: 'center center',
+    };
+  };
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Professional Hospital Workstation Navbar */}
+      {/* Top Clinical Workstation Header with Animated ECG Pulse */}
       <header
         style={{
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(8, 13, 26, 0.85)',
+          background: 'rgba(7, 11, 22, 0.88)',
           backdropFilter: 'blur(20px)',
           position: 'sticky',
           top: 0,
@@ -252,7 +332,7 @@ export default function App() {
       >
         <div
           style={{
-            maxWidth: 1520,
+            maxWidth: 1600,
             margin: '0 auto',
             display: 'flex',
             alignItems: 'center',
@@ -260,7 +340,7 @@ export default function App() {
             gap: 16,
           }}
         >
-          {/* Brand Logo & Clinical System Status */}
+          {/* Logo & Clinical System Pulse */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div
               style={{
@@ -271,7 +351,7 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 20px rgba(6, 182, 212, 0.35)',
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)',
               }}
             >
               <Stethoscope size={24} color="#ffffff" />
@@ -302,16 +382,31 @@ export default function App() {
             </div>
           </div>
 
-          {/* System Telemetry Badges */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Animated ECG Pulse Telemetry in Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div
+              className="glass-pill"
+              style={{ padding: '6px 14px', gap: 10, borderColor: 'rgba(6, 182, 212, 0.25)' }}
+            >
+              <svg width="60" height="20" viewBox="0 0 100 30" style={{ overflow: 'visible' }}>
+                <path
+                  d="M0,15 L30,15 L35,5 L40,25 L45,10 L50,18 L55,15 L100,15"
+                  fill="none"
+                  stroke="#06b6d4"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="ecg-path"
+                />
+              </svg>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: '#38bdf8', fontWeight: 600 }}>
+                SYSTEM ACTIVE
+              </span>
+            </div>
+
             <div className="glass-pill" style={{ borderColor: 'rgba(16, 185, 129, 0.25)', color: '#34d399' }}>
               <span className="pulse-dot" style={{ background: '#10b981' }} />
               <span>NLEM 2022 CATALOG (91 DRUGS)</span>
-            </div>
-
-            <div className="glass-pill" style={{ borderColor: 'rgba(6, 182, 212, 0.25)', color: '#38bdf8' }}>
-              <ShieldCheck size={14} color="#06b6d4" />
-              <span>LASA GUARD ACTIVE</span>
             </div>
 
             {/* Quick Test Case Loader Dropdown */}
@@ -328,7 +423,7 @@ export default function App() {
 
               {showCaseDropdown && (
                 <div className="dropdown-menu">
-                  <div style={{ padding: '8px 14px', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  <div style={{ padding: '10px 16px', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
                     Select Clinical Scenario
                   </div>
                   {samples.map((s) => (
@@ -362,12 +457,38 @@ export default function App() {
               )}
             </div>
 
+            {/* Audit Trail Drawer Toggle */}
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowAuditDrawer(!showAuditDrawer)}
+              style={{ padding: '8px 12px' }}
+              title="View Clinical Audit Trail"
+            >
+              <History size={16} color="#06b6d4" />
+              <span style={{ fontSize: '0.82rem' }}>Audit Log</span>
+              {auditLog.length > 0 && (
+                <span
+                  style={{
+                    padding: '2px 6px',
+                    borderRadius: 9999,
+                    background: '#06b6d4',
+                    color: '#080d1a',
+                    fontSize: '0.7rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  {auditLog.length}
+                </span>
+              )}
+            </button>
+
             {activePrescription && (
               <button
                 className="btn btn-secondary"
                 onClick={() => {
                   setActivePrescription(null);
                   setUploadError(null);
+                  setAuditLog([]);
                 }}
                 style={{ padding: '8px 12px' }}
                 title="Start new prescription"
@@ -381,7 +502,7 @@ export default function App() {
       </header>
 
       {/* Main Workspace Stage */}
-      <main style={{ maxWidth: 1520, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1 }}>
+      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1 }}>
         {/* Upload Hero Section (Shown when no prescription loaded) */}
         {!activePrescription && (
           <div style={{ maxWidth: 960, margin: '20px auto 40px' }}>
@@ -405,7 +526,7 @@ export default function App() {
                 <Activity size={15} />
                 <span>INTELLIGENT PRESCRIPTION VERIFICATION WORKSTATION</span>
               </div>
-              <h2 style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 12 }}>
+              <h2 style={{ fontSize: '2.3rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 12 }}>
                 High-Precision Clinical Handwriting Ingestion
               </h2>
               <p style={{ fontSize: '0.96rem', color: 'var(--text-muted)', maxWidth: 640, margin: '0 auto', lineHeight: 1.6 }}>
@@ -413,16 +534,16 @@ export default function App() {
               </p>
             </div>
 
-            {/* Prescription Ingestion Dropzone */}
+            {/* Prescription Ingestion Dropzone with Animated Laser Scan */}
             <div
-              className="glass-panel"
+              className="glass-panel glass-panel-hoverable"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
                 if (e.dataTransfer.files?.[0]) handleFileUpload(e.dataTransfer.files[0]);
               }}
               style={{
-                padding: '48px 32px',
+                padding: '52px 32px',
                 textAlign: 'center',
                 position: 'relative',
                 overflow: 'hidden',
@@ -431,7 +552,7 @@ export default function App() {
               }}
               onClick={() => fileInputRef.current?.click()}
             >
-              {loading && <div className="scan-line" />}
+              {loading && <div className="laser-scanner-line" />}
 
               <input
                 id="file-upload-input"
@@ -446,23 +567,23 @@ export default function App() {
 
               <div
                 style={{
-                  width: 76,
-                  height: 76,
-                  borderRadius: 20,
-                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(2, 132, 199, 0.25) 100%)',
-                  border: '1px solid rgba(6, 182, 212, 0.4)',
+                  width: 80,
+                  height: 80,
+                  borderRadius: 22,
+                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.18) 0%, rgba(2, 132, 199, 0.3) 100%)',
+                  border: '1px solid rgba(6, 182, 212, 0.45)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   margin: '0 auto 20px',
                   color: '#06b6d4',
-                  boxShadow: '0 0 25px rgba(6, 182, 212, 0.25)',
+                  boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)',
                 }}
               >
-                <Upload size={34} />
+                <Upload size={36} />
               </div>
 
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: 8, color: '#f8fafc' }}>
+              <h3 style={{ fontSize: '1.38rem', fontWeight: 800, marginBottom: 8, color: '#f8fafc' }}>
                 Drag & Drop Handwritten Prescription
               </h3>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 24 }}>
@@ -473,7 +594,7 @@ export default function App() {
                 <button
                   id="btn-select-file"
                   className="btn btn-primary"
-                  style={{ padding: '12px 24px', fontSize: '0.92rem' }}
+                  style={{ padding: '12px 26px', fontSize: '0.92rem' }}
                   onClick={(e) => {
                     e.stopPropagation();
                     fileInputRef.current?.click();
@@ -484,7 +605,7 @@ export default function App() {
                 <button
                   id="btn-camera-capture"
                   className="btn btn-secondary"
-                  style={{ padding: '12px 20px', fontSize: '0.92rem' }}
+                  style={{ padding: '12px 22px', fontSize: '0.92rem' }}
                   onClick={(e) => {
                     e.stopPropagation();
                     fileInputRef.current?.click();
@@ -494,22 +615,23 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Loading Indicator */}
+              {/* Multi-Stage Loading Indicator with Scanning Waves */}
               {loading && (
                 <div
                   style={{
                     marginTop: 32,
-                    padding: '16px 24px',
-                    borderRadius: 12,
-                    background: 'rgba(6, 182, 212, 0.1)',
-                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    padding: '16px 26px',
+                    borderRadius: 14,
+                    background: 'rgba(6, 182, 212, 0.12)',
+                    border: '1px solid rgba(6, 182, 212, 0.35)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 14,
+                    boxShadow: '0 0 25px rgba(6, 182, 212, 0.25)',
                   }}
                 >
                   <RefreshCw size={22} className="pulse-dot" color="#06b6d4" />
-                  <span style={{ fontSize: '0.92rem', color: '#38bdf8', fontWeight: 600 }}>
+                  <span style={{ fontSize: '0.94rem', color: '#38bdf8', fontWeight: 700 }}>
                     {processingStage}
                   </span>
                 </div>
@@ -537,23 +659,23 @@ export default function App() {
               )}
             </div>
 
-            {/* Quick Test Case Chips (Integrated naturally) */}
-            <div style={{ marginTop: 24, textAlign: 'center' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 600, marginRight: 12 }}>
-                OR RUN PRELOADED CLINICAL CASES:
+            {/* Quick Test Case Chips */}
+            <div style={{ marginTop: 28, textAlign: 'center' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 700, marginRight: 12 }}>
+                OR RUN CLINICAL TEST CASES:
               </span>
-              <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
                 {samples.map((s) => (
                   <button
                     key={s.id}
-                    className="btn btn-secondary"
-                    style={{ padding: '6px 14px', fontSize: '0.8rem', borderRadius: 9999 }}
+                    className="btn btn-secondary fast-fix-pill"
+                    style={{ padding: '7px 16px', fontSize: '0.82rem', borderRadius: 9999 }}
                     onClick={() => loadSample(s.id)}
                   >
                     <span
                       style={{
-                        width: 6,
-                        height: 6,
+                        width: 7,
+                        height: 7,
                         borderRadius: '50%',
                         background:
                           s.category === 'clean' ? '#10b981' :
@@ -641,7 +763,7 @@ export default function App() {
         {/* Prescription Verification Review Stage */}
         {activePrescription && activePrescription.quality_check.passed && (
           <div>
-            {/* Top Verification Header Bar */}
+            {/* Top Workspace HUD Bar */}
             <div
               className="glass-panel"
               style={{
@@ -657,9 +779,9 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div
                   style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 10,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
                     background: 'rgba(6, 182, 212, 0.15)',
                     display: 'flex',
                     alignItems: 'center',
@@ -667,11 +789,11 @@ export default function App() {
                     color: '#06b6d4',
                   }}
                 >
-                  <FileText size={22} />
+                  <FileText size={24} />
                 </div>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
                       PRESCRIPTION <span style={{ fontFamily: 'var(--font-mono)', color: '#06b6d4' }}>#{activePrescription.prescription_id}</span>
                     </h3>
                     <span className="glass-pill" style={{ fontSize: '0.74rem' }}>
@@ -684,8 +806,25 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Safety Lock & Batch Approve */}
+              {/* Progress Summary and Batch Sign-Off */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 600 }}>PROGRESS:</span>
+                  <div style={{ width: 120, height: 8, background: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${totalLines ? (confirmedLinesCount / totalLines) * 100 : 0}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #06b6d4 0%, #10b981 100%)',
+                        transition: 'width 0.3s ease',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: '#38bdf8' }}>
+                    {confirmedLinesCount}/{totalLines}
+                  </span>
+                </div>
+
                 {unreviewedRedCount > 0 ? (
                   <div
                     style={{
@@ -729,7 +868,7 @@ export default function App() {
                   className="btn btn-success"
                   disabled={unreviewedRedCount > 0}
                   onClick={handleConfirmAll}
-                  style={{ padding: '10px 20px' }}
+                  style={{ padding: '10px 22px' }}
                 >
                   {unreviewedRedCount > 0 ? <Lock size={16} /> : <Unlock size={16} />}
                   <span>Sign-Off & Dispense Rx</span>
@@ -737,31 +876,92 @@ export default function App() {
               </div>
             </div>
 
-            {/* Split View: Prescription Image Stage + Line Verification Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 24, alignItems: 'start' }}>
-              {/* Left Column: Full Prescription Viewer & Quality Radar */}
+            {/* Split View: Interactive Image Stage + Line Verification Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: 26, alignItems: 'start' }}>
+              {/* Left Column: Interactive Prescription Image Viewer */}
               <div style={{ position: 'sticky', top: 90 }}>
-                <div className="glass-panel" style={{ padding: '18px', marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div className="glass-panel" style={{ padding: '20px', marginBottom: 16 }}>
+                  {/* Canvas Header & Interactive Tools */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                     <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-sub)', textTransform: 'uppercase' }}>
                       SOURCE PRESCRIPTION IMAGE
                     </span>
+
+                    {/* Interactive Zoom & Rotate Tools */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => setZoomLevel((z) => Math.min(2, +(z + 0.25).toFixed(2)))}
+                        title="Zoom In"
+                      >
+                        <ZoomIn size={14} />
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => setZoomLevel((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))}
+                        title="Zoom Out"
+                      >
+                        <ZoomOut size={14} />
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => setImageRotation((r) => (r + 90) % 360)}
+                        title="Rotate 90° Clockwise"
+                      >
+                        <RotateCw size={14} />
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          setZoomLevel(1);
+                          setImageRotation(0);
+                          setImageFilter('normal');
+                        }}
+                        title="Reset View"
+                      >
+                        100%
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Pills (Normal / High Contrast / Invert) */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                     <button
-                      className="glass-pill"
-                      style={{ cursor: 'pointer', fontSize: '0.74rem' }}
-                      onClick={() => setSelectedCropPreview(activePrescription.image_url)}
+                      className={`filter-tab ${imageFilter === 'normal' ? 'active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                      onClick={() => setImageFilter('normal')}
                     >
-                      <ZoomIn size={13} /> Fullscreen
+                      Original
+                    </button>
+                    <button
+                      className={`filter-tab ${imageFilter === 'contrast' ? 'active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                      onClick={() => setImageFilter('contrast')}
+                    >
+                      Enhance Ink
+                    </button>
+                    <button
+                      className={`filter-tab ${imageFilter === 'invert' ? 'active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                      onClick={() => setImageFilter('invert')}
+                    >
+                      Invert (Darkroom)
                     </button>
                   </div>
 
+                  {/* Prescription Image Box with Laser Scan on Hover */}
                   <div
                     style={{
                       borderRadius: 12,
                       overflow: 'hidden',
                       background: '#040711',
                       border: '1px solid rgba(255, 255, 255, 0.08)',
-                      maxHeight: 460,
+                      height: 440,
+                      position: 'relative',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -770,36 +970,85 @@ export default function App() {
                     <img
                       src={activePrescription.image_url}
                       alt="Prescription Scan"
-                      style={{ width: '100%', height: 'auto', maxHeight: 460, objectFit: 'contain' }}
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        ...getImageFilterStyle(),
+                      }}
                       onError={(e) => {
                         e.target.style.display = 'none';
                       }}
                     />
+
+                    {/* Interactive Line Highlights on Canvas */}
+                    {activePrescription.lines.map((line) => {
+                      const isHovered = hoveredLineId === line.line_id;
+                      if (!isHovered) return null;
+                      return (
+                        <div
+                          key={line.line_id}
+                          style={{
+                            position: 'absolute',
+                            left: '8%',
+                            right: '8%',
+                            top: `${20 + (line.line_id - 1) * 22}%`,
+                            height: '18%',
+                            border: '2px solid #06b6d4',
+                            background: 'rgba(6, 182, 212, 0.2)',
+                            boxShadow: '0 0 20px #06b6d4',
+                            borderRadius: 6,
+                            pointerEvents: 'none',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: -12,
+                              left: 6,
+                              background: '#06b6d4',
+                              color: '#080d1a',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: 3,
+                            }}
+                          >
+                            LINE #{line.line_id}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Optical Gating HUD */}
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: 8 }}>
+                  {/* Optical Gating HUD Meter Cards */}
+                  <div style={{ marginTop: 18 }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: 10 }}>
                       OPTICAL QUALITY AUDIT
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Focus (Blur)</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#34d399', marginTop: 2 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Focus (Laplacian)</div>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#34d399', marginTop: 2 }}>
                           {activePrescription.quality_check.blur_score}
                         </div>
+                        <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>min: 70.0</div>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Illumination</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8', marginTop: 2 }}>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Illumination</div>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
                           {activePrescription.quality_check.mean_brightness}
                         </div>
+                        <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>min: 50.0</div>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Glare Wash</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)' }}>Specular Glare</div>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#a78bfa', marginTop: 2 }}>
                           {(activePrescription.quality_check.glare_share * 100).toFixed(1)}%
                         </div>
+                        <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>max: 10%</div>
                       </div>
                     </div>
                   </div>
@@ -807,30 +1056,87 @@ export default function App() {
               </div>
 
               {/* Right Column: Line-by-Line Medication Verification Stream */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                {activePrescription.lines.map((line) => {
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* Interactive Filter Tabs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-sub)', fontWeight: 700, marginRight: 6 }}>
+                    FILTER:
+                  </span>
+                  <button
+                    className={`filter-tab ${activeFilterTab === 'all' ? 'active' : ''}`}
+                    onClick={() => setActiveFilterTab('all')}
+                  >
+                    All Lines ({totalLines})
+                  </button>
+                  {unreviewedRedCount > 0 && (
+                    <button
+                      className={`filter-tab ${activeFilterTab === 'red' ? 'active' : ''}`}
+                      style={{ color: '#f87171' }}
+                      onClick={() => setActiveFilterTab('red')}
+                    >
+                      <AlertTriangle size={13} style={{ display: 'inline', marginRight: 4 }} />
+                      Attention Needed ({unreviewedRedCount})
+                    </button>
+                  )}
+                  {lookalikeCount > 0 && (
+                    <button
+                      className={`filter-tab ${activeFilterTab === 'lookalike' ? 'active' : ''}`}
+                      style={{ color: '#fbbf24' }}
+                      onClick={() => setActiveFilterTab('lookalike')}
+                    >
+                      <AlertOctagon size={13} style={{ display: 'inline', marginRight: 4 }} />
+                      Look-Alike Risk ({lookalikeCount})
+                    </button>
+                  )}
+                  <button
+                    className={`filter-tab ${activeFilterTab === 'confirmed' ? 'active' : ''}`}
+                    style={{ color: '#34d399' }}
+                    onClick={() => setActiveFilterTab('confirmed')}
+                  >
+                    <CheckCircle2 size={13} style={{ display: 'inline', marginRight: 4 }} />
+                    Approved ({confirmedLinesCount})
+                  </button>
+                </div>
+
+                {/* Line Cards List */}
+                {filteredLines.map((line, idx) => {
                   const isRed = line.confidence.level === 'red';
                   const isYellow = line.confidence.level === 'yellow';
                   const isGreen = line.confidence.level === 'green';
                   const isConfirmed = line.status === 'confirmed' || line.status === 'corrected';
                   const isEditing = editingLineId === line.line_id;
+                  const isHovered = hoveredLineId === line.line_id;
+
+                  // Circular SVG score calculations
+                  const scorePercent = Math.round((line.confidence.score || 0) * 100);
+                  const circleCircumference = 2 * Math.PI * 18;
+                  const strokeOffset = circleCircumference - (scorePercent / 100) * circleCircumference;
+                  const strokeColor = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
 
                   return (
                     <div
                       key={line.line_id}
                       id={`line-card-${line.line_id}`}
-                      className="glass-panel"
+                      className="glass-panel animate-card-entry"
                       style={{
                         padding: '22px 24px',
                         borderLeft: `5px solid ${
                           isConfirmed ? '#10b981' : isRed ? '#ef4444' : isYellow ? '#f59e0b' : '#10b981'
                         }`,
-                        background: isConfirmed ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-card)',
+                        background: isHovered
+                          ? 'rgba(6, 182, 212, 0.08)'
+                          : isConfirmed
+                          ? 'rgba(16, 185, 129, 0.04)'
+                          : 'var(--bg-card)',
+                        animationDelay: `${idx * 0.08}s`,
+                        transition: 'all 0.2s ease',
                       }}
+                      onMouseEnter={() => setHoveredLineId(line.line_id)}
+                      onMouseLeave={() => setHoveredLineId(null)}
                     >
                       {/* Line Card Header */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <span
                             style={{
                               fontFamily: 'var(--font-mono)',
@@ -845,18 +1151,51 @@ export default function App() {
                             LINE #{line.line_id}
                           </span>
 
-                          <span
-                            className={`glass-pill badge-${line.confidence.level}`}
-                            style={{ fontWeight: 700, fontSize: '0.78rem' }}
-                          >
+                          {/* Animated Radial SVG Confidence Meter */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <svg width="44" height="44" viewBox="0 0 44 44">
+                              <circle
+                                cx="22"
+                                cy="22"
+                                r="18"
+                                fill="none"
+                                stroke="#1e293b"
+                                strokeWidth="3.5"
+                              />
+                              <circle
+                                cx="22"
+                                cy="22"
+                                r="18"
+                                fill="none"
+                                stroke={strokeColor}
+                                strokeWidth="3.5"
+                                strokeDasharray={circleCircumference}
+                                strokeDashoffset={strokeOffset}
+                                strokeLinecap="round"
+                                transform="rotate(-90 22 22)"
+                                style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                              />
+                              <text
+                                x="22"
+                                y="26"
+                                textAnchor="middle"
+                                fill={strokeColor}
+                                fontSize="11"
+                                fontWeight="800"
+                                fontFamily="var(--font-mono)"
+                              >
+                                {scorePercent}%
+                              </text>
+                            </svg>
+
                             <span
-                              className="pulse-dot"
-                              style={{
-                                background: isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444',
-                              }}
-                            />
-                            {line.confidence.level.toUpperCase()} CONFIDENCE ({(line.confidence.score * 100).toFixed(0)}%)
-                          </span>
+                              className={`glass-pill badge-${line.confidence.level}`}
+                              style={{ fontWeight: 700, fontSize: '0.78rem' }}
+                            >
+                              <span className="pulse-dot" style={{ background: strokeColor }} />
+                              {line.confidence.level.toUpperCase()} CONFIDENCE
+                            </span>
+                          </div>
 
                           {line.status === 'corrected' && (
                             <span className="glass-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
@@ -909,7 +1248,7 @@ export default function App() {
 
                       {/* Main Line Content: Crop vs Drug Identification */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 2fr', gap: 24 }}>
-                        {/* Left: Original Handwritten Crop Preview */}
+                        {/* Left: Original Handwritten Crop Preview with Zoom Trigger */}
                         <div>
                           <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-sub)', marginBottom: 8, textTransform: 'uppercase' }}>
                             ORIGINAL HANDWRITTEN SEGMENT:
@@ -925,6 +1264,7 @@ export default function App() {
                               justifyContent: 'center',
                               cursor: 'zoom-in',
                               boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+                              position: 'relative',
                             }}
                             onClick={() => setSelectedCropPreview(line.crop)}
                             title="Click to zoom image"
@@ -937,6 +1277,23 @@ export default function App() {
                                 e.target.style.display = 'none';
                               }}
                             />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                right: 8,
+                                bottom: 8,
+                                background: 'rgba(0, 0, 0, 0.6)',
+                                borderRadius: 4,
+                                padding: '2px 6px',
+                                color: '#ffffff',
+                                fontSize: '0.65rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <Maximize2 size={11} /> Zoom
+                            </div>
                           </div>
 
                           <div style={{ marginTop: 10, fontSize: '0.74rem', color: 'var(--text-muted)' }}>
@@ -982,33 +1339,39 @@ export default function App() {
                           {line.lookalike?.is_flagged && (
                             <div
                               id={`lookalike-warning-${line.line_id}`}
+                              className="lasa-beacon"
                               style={{
-                                padding: '12px 16px',
-                                borderRadius: 10,
-                                background: 'rgba(239, 68, 68, 0.14)',
-                                border: '1px solid rgba(239, 68, 68, 0.45)',
+                                padding: '14px 18px',
+                                borderRadius: 12,
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.5)',
                                 marginBottom: 16,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                gap: 14,
+                                gap: 16,
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <AlertOctagon size={22} color="#f87171" />
-                                <span style={{ fontSize: '0.84rem', color: '#fca5a5', lineHeight: 1.45, fontWeight: 500 }}>
-                                  {line.lookalike.warning_message}
-                                </span>
+                                <AlertOctagon size={24} color="#f87171" />
+                                <div>
+                                  <div style={{ fontSize: '0.86rem', color: '#fca5a5', fontWeight: 700 }}>
+                                    CONFUSABLE LOOK-ALIKE HAZARD (LASA RISK)
+                                  </div>
+                                  <div style={{ fontSize: '0.82rem', color: '#fecaca', marginTop: 2 }}>
+                                    {line.lookalike.warning_message}
+                                  </div>
+                                </div>
                               </div>
 
                               {line.lookalike.paired_drug && (
                                 <button
-                                  className="btn btn-secondary"
+                                  className="btn btn-secondary fast-fix-pill"
                                   style={{
-                                    padding: '6px 14px',
-                                    fontSize: '0.78rem',
-                                    background: 'rgba(239, 68, 68, 0.25)',
-                                    borderColor: 'rgba(239, 68, 68, 0.55)',
+                                    padding: '7px 16px',
+                                    fontSize: '0.8rem',
+                                    background: 'rgba(239, 68, 68, 0.28)',
+                                    borderColor: 'rgba(239, 68, 68, 0.65)',
                                     color: '#ffffff',
                                     whiteSpace: 'nowrap',
                                     fontWeight: 700,
@@ -1031,7 +1394,7 @@ export default function App() {
                           )}
 
                           {/* Clinical Regimen Fields Grid */}
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
                             {/* Dose */}
                             <div
                               style={{
@@ -1099,7 +1462,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* One-Click Fast Fix Candidates */}
+                          {/* One-Click Fast Fix Interactive Pills */}
                           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                             <span style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
                               One-Click Fast Fix:
@@ -1108,10 +1471,10 @@ export default function App() {
                               <button
                                 key={cIdx}
                                 id={`one-click-pill-${line.line_id}-${cand.brand_name}`}
-                                className="btn btn-secondary"
+                                className="btn btn-secondary fast-fix-pill"
                                 style={{
-                                  padding: '4px 12px',
-                                  fontSize: '0.8rem',
+                                  padding: '5px 14px',
+                                  fontSize: '0.82rem',
                                   borderRadius: 9999,
                                   background:
                                     (line.final_drug || line.selected_candidate?.brand_name) === cand.brand_name
@@ -1145,10 +1508,11 @@ export default function App() {
                         <div
                           style={{
                             marginTop: 20,
-                            padding: '20px',
-                            borderRadius: 12,
+                            padding: '22px',
+                            borderRadius: 14,
                             background: 'rgba(15, 23, 42, 0.95)',
-                            border: '1px solid rgba(6, 182, 212, 0.35)',
+                            border: '1px solid rgba(6, 182, 212, 0.4)',
+                            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6)',
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -1357,19 +1721,96 @@ export default function App() {
         )}
       </main>
 
-      {/* Verified Electronic Dispense Modal */}
+      {/* Slide-out Interactive Audit Log Drawer */}
+      {showAuditDrawer && (
+        <div className="modal-overlay" onClick={() => setShowAuditDrawer(false)}>
+          <div
+            className="glass-panel"
+            style={{
+              position: 'fixed',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 440,
+              maxWidth: '90vw',
+              borderRadius: '20px 0 0 20px',
+              padding: '24px',
+              background: '#090e1c',
+              overflowY: 'auto',
+              borderLeft: '1px solid rgba(6, 182, 212, 0.3)',
+              boxShadow: '-10px 0 40px rgba(0,0,0,0.8)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <History size={20} color="#06b6d4" />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Clinical Audit Trail</h3>
+              </div>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', borderRadius: '50%' }}
+                onClick={() => setShowAuditDrawer(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 20 }}>
+              Immutable event log recorded to SQLite audit table for compliance and clinical traceability.
+            </p>
+
+            {auditLog.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-sub)' }}>
+                No events recorded in current session yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {auditLog.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#38bdf8' }}>
+                        {item.action}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-sub)' }}>
+                        {item.timestamp}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-main)', lineHeight: 1.4 }}>
+                      {item.detail}
+                    </p>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)', marginTop: 4 }}>
+                      Signer: {item.user}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Verified Electronic Dispense Celebration Modal */}
       {showDispenseModal && (
         <div className="modal-overlay" onClick={() => setShowDispenseModal(false)}>
           <div
             className="glass-panel"
-            style={{ maxWidth: 640, width: '100%', padding: '32px', background: '#0b1120' }}
+            style={{ maxWidth: 640, width: '100%', padding: '36px', background: '#0b1120' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <div
                 style={{
-                  width: 60,
-                  height: 60,
+                  width: 68,
+                  height: 68,
                   borderRadius: '50%',
                   background: 'rgba(16, 185, 129, 0.2)',
                   display: 'flex',
@@ -1377,11 +1818,12 @@ export default function App() {
                   justifyContent: 'center',
                   margin: '0 auto 16px',
                   color: '#10b981',
+                  boxShadow: '0 0 30px rgba(16, 185, 129, 0.35)',
                 }}
               >
-                <CheckCircle2 size={36} />
+                <CheckCircle2 size={40} />
               </div>
-              <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc' }}>
+              <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f8fafc' }}>
                 Prescription Verified & Approved for Dispense
               </h3>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginTop: 4 }}>
@@ -1392,8 +1834,8 @@ export default function App() {
             <div
               style={{
                 background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 12,
-                padding: '16px 20px',
+                borderRadius: 14,
+                padding: '18px 22px',
                 marginBottom: 24,
                 border: '1px solid rgba(255, 255, 255, 0.08)',
               }}
@@ -1440,7 +1882,7 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setSelectedCropPreview(null)}>
           <div
             className="glass-panel"
-            style={{ padding: 20, background: '#ffffff', borderRadius: 16, maxWidth: 840 }}
+            style={{ padding: 20, background: '#ffffff', borderRadius: 16, maxWidth: 880 }}
             onClick={(e) => e.stopPropagation()}
           >
             <img src={selectedCropPreview} alt="Zoomed Segment" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }} />
