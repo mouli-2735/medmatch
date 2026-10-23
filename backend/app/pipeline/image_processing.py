@@ -227,7 +227,9 @@ class ImageQualityProcessor:
             if gemini_rot is None:
                 # Gemini is unavailable: apply default and set orientation_confident=False
                 orientation_confident = False
-                if w > h * 1.15 or var_v > var_h:
+                # If uploaded photo is landscape (w > h), rotate 270 deg to make portrait.
+                # If already portrait (h >= w), keep upright at 0 deg. Never rotate portrait to landscape.
+                if w > h * 1.15:
                     rotation_applied = 270
                 else:
                     rotation_applied = 0

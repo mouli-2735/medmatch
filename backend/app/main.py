@@ -444,3 +444,8 @@ async def load_sample_prescription(sample_id: str):
     # Save in DB for session
     save_prescription_record(res.model_dump(), f"/static/testset/images/{sample_id}.png")
     return res
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host=HOST, port=PORT, reload=True)
+

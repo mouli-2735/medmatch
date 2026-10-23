@@ -17,6 +17,8 @@ uploads/
 backend/data/uploads/
 backend/data/test_crops_*/
 backend/data/crops/
+data/test_crops_*/
+data/
 
 # Node & Frontend Build
 node_modules/

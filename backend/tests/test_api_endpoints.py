@@ -11,9 +11,12 @@ def client():
 
 class TestApiEndpoints:
     def test_health_check(self, client):
-        res = client.get("/api/health")
-        assert res.status_code == 200
-        assert res.json()["status"] == "healthy"
+        from unittest.mock import patch
+        from app.pipeline.ocr import GeminiOCRReader
+        with patch.object(GeminiOCRReader, "verify_model", return_value=(True, None)):
+            res = client.get("/api/health")
+            assert res.status_code == 200
+            assert res.json()["status"] == "healthy"
 
     def test_sample_prescriptions_list(self, client):
         res = client.get("/api/sample-prescriptions")

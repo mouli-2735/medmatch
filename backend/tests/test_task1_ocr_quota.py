@@ -21,8 +21,9 @@ class TestTask1GeminiReliabilityAndQuota:
     def test_config_model_names_single_source_of_truth(self):
         """Task 1: Verify model names are env-driven and contain no hardcoded 'gemini-3.x' strings"""
         from pathlib import Path
-        config_text = Path("app/config.py").read_text(encoding="utf-8")
-        ocr_text = Path("app/pipeline/ocr.py").read_text(encoding="utf-8")
+        backend_dir = Path(__file__).resolve().parent.parent
+        config_text = (backend_dir / "app" / "config.py").read_text(encoding="utf-8")
+        ocr_text = (backend_dir / "app" / "pipeline" / "ocr.py").read_text(encoding="utf-8")
         assert "gemini-3." not in config_text
         assert "gemini-3." not in ocr_text
         assert GEMINI_MODEL is not None
