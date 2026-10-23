@@ -20,13 +20,10 @@ import {
   X,
   Stethoscope,
   History,
-  Smile,
   Maximize2
 } from 'lucide-react';
 
 import ThreeDMedicalScene from './components/ThreeDMedicalScene';
-import DoctorAvatarAssistant from './components/DoctorAvatarAssistant';
-import InteractiveDoctor3D from './components/InteractiveDoctor3D';
 
 const API_BASE = '';
 
@@ -53,7 +50,6 @@ export default function App() {
 
   // 3D Parallax Tilt for Hero Tablet Card
   const [tiltStyle, setTiltStyle] = useState({});
-  const [heroViewMode, setHeroViewMode] = useState('doctor'); // 'doctor' | 'tablet'
   const [theme, setTheme] = useState('skyblue'); // 'skyblue' | 'dark'
 
   React.useEffect(() => {
@@ -317,14 +313,6 @@ export default function App() {
       {/* 3D Three.js Floating Molecule Scene in Background */}
       <ThreeDMedicalScene isScanning={loading} />
 
-      {/* Floating 3D Doctor Avatar Assistant */}
-      <DoctorAvatarAssistant
-        activePrescription={activePrescription}
-        loading={loading}
-        processingStage={processingStage}
-        hoveredLineId={hoveredLineId}
-      />
-
       {/* Top Clinical Workstation Header with Animated ECG Pulse */}
       <header
         style={{
@@ -484,7 +472,7 @@ export default function App() {
       </header>
 
       {/* Main Workspace Stage */}
-      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1, zIndex: 10 }}>
+      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '16px 28px', width: '100%', flex: 1, zIndex: 10 }}>
         {/* EDITORIAL HERO SECTION (Modeled after reference layout with Doctor Tablet Desk 3D Tilt) */}
         {!activePrescription && (
           <div>
@@ -492,113 +480,61 @@ export default function App() {
             <div
               className="glass-panel"
               style={{
-                marginBottom: 36,
-                padding: '24px',
+                marginBottom: 0,
+                padding: '24px 28px',
                 borderRadius: 24,
                 background: 'rgba(12, 19, 36, 0.85)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 display: 'grid',
-                gridTemplateColumns: '1.2fr 1fr',
-                gap: 36,
+                gridTemplateColumns: 'minmax(300px, 420px) 1fr',
+                gap: 32,
                 alignItems: 'center',
               }}
             >
-              {/* Left: Interactive 3D Doctor Studio OR Tablet Desk Card */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* View Switcher Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button
-                      className="glass-pill"
-                      onClick={() => setHeroViewMode('doctor')}
-                      style={{
-                        background: heroViewMode === 'doctor' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-                        borderColor: heroViewMode === 'doctor' ? '#06b6d4' : 'rgba(255, 255, 255, 0.1)',
-                        color: heroViewMode === 'doctor' ? '#38bdf8' : 'var(--text-muted)',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: '5px 14px',
-                        fontSize: '0.76rem',
-                      }}
-                    >
-                      <Smile size={13} color="#06b6d4" /> 3D Doctor Studio
-                    </button>
-                    <button
-                      className="glass-pill"
-                      onClick={() => setHeroViewMode('tablet')}
-                      style={{
-                        background: heroViewMode === 'tablet' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-                        borderColor: heroViewMode === 'tablet' ? '#06b6d4' : 'rgba(255, 255, 255, 0.1)',
-                        color: heroViewMode === 'tablet' ? '#38bdf8' : 'var(--text-muted)',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: '5px 14px',
-                        fontSize: '0.76rem',
-                      }}
-                    >
-                      <FileText size={13} color="#06b6d4" /> Digital Tablet Desk
-                    </button>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)' }}>
-                    {heroViewMode === 'doctor' ? 'Live Interactive WebGL' : '3D Perspective Tilt'}
-                  </span>
+              {/* Left: Photorealistic Clinical Ingestion Tablet Desk with 3D Parallax Tilt */}
+              <div
+                ref={heroCardRef}
+                onMouseMove={handleHeroMouseMove}
+                onMouseLeave={handleHeroMouseLeave}
+                style={{
+                  borderRadius: 18,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  maxHeight: 310,
+                  boxShadow: '0 20px 45px rgba(0, 0, 0, 0.45), 0 0 25px rgba(6, 182, 212, 0.25)',
+                  cursor: 'pointer',
+                  ...tiltStyle,
+                }}
+                onClick={() => setShowUploadModal(true)}
+                title="Click to scan prescription on digital tablet"
+              >
+                <img
+                  src="/assets/doctor_tablet_desk.jpg"
+                  alt="Doctor Prescription Tablet Desk"
+                  style={{ width: '100%', height: '100%', maxHeight: 310, display: 'block', objectFit: 'cover' }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    left: 14,
+                    background: 'rgba(4, 8, 18, 0.75)',
+                    backdropFilter: 'blur(10px)',
+                    padding: '5px 12px',
+                    borderRadius: 9999,
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: '#38bdf8',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <Sparkles size={12} color="#06b6d4" />
+                  <span>3D CLINICAL INGESTION TABLET</span>
                 </div>
-
-                {heroViewMode === 'doctor' ? (
-                  <div style={{ width: '100%', height: 490 }}>
-                    <InteractiveDoctor3D
-                      activePrescription={activePrescription}
-                      loading={loading}
-                      processingStage={processingStage}
-                      hoveredLineId={hoveredLineId}
-                      onUploadClick={() => setShowUploadModal(true)}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    ref={heroCardRef}
-                    onMouseMove={handleHeroMouseMove}
-                    onMouseLeave={handleHeroMouseLeave}
-                    style={{
-                      borderRadius: 20,
-                      overflow: 'hidden',
-                      position: 'relative',
-                      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(6, 182, 212, 0.25)',
-                      cursor: 'pointer',
-                      ...tiltStyle,
-                    }}
-                    onClick={() => setShowUploadModal(true)}
-                    title="Click to scan prescription on doctor's digital tablet"
-                  >
-                    <img
-                      src="/assets/doctor_tablet_desk.jpg"
-                      alt="Doctor Prescription Tablet Desk"
-                      style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }}
-                    />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 16,
-                        left: 16,
-                        background: 'rgba(4, 8, 18, 0.75)',
-                        backdropFilter: 'blur(10px)',
-                        padding: '6px 14px',
-                        borderRadius: 9999,
-                        border: '1px solid rgba(6, 182, 212, 0.4)',
-                        color: '#38bdf8',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                    >
-                      <Sparkles size={13} color="#06b6d4" />
-                      <span>3D CLINICAL INGESTION TABLET</span>
-                    </div>
-                    {loading && <div className="laser-scanner-line" />}
-                  </div>
-                )}
+                {loading && <div className="laser-scanner-line" />}
               </div>
 
               {/* Right: Editorial Typography & Actions */}
@@ -942,15 +878,6 @@ export default function App() {
         {/* Prescription Verification Review Stage */}
         {activePrescription && activePrescription.quality_check.passed && (
           <div>
-            {/* Live 3D Doctor Clinical Supervisor HUD */}
-            <InteractiveDoctor3D
-              activePrescription={activePrescription}
-              loading={loading}
-              processingStage={processingStage}
-              hoveredLineId={hoveredLineId}
-              compact={true}
-            />
-
             {/* Top Workspace HUD Bar */}
             <div
               className="glass-panel"

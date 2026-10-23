@@ -178,6 +178,7 @@ export default function ThreeDMedicalScene({ isScanning = false }) {
         left: 0,
         pointerEvents: 'none',
         zIndex: 1,
+        overflow: 'hidden',
       }}
     />
   );
