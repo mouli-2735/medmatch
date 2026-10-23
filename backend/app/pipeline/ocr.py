@@ -78,35 +78,50 @@ class GeminiOCRReader:
 
         # If Gemini client is available and API key is set
         if self.client and self.api_key:
-            for attempt in range(max_retries + 1):
-                try:
-                    with open(path, "rb") as f:
-                        image_bytes = f.read()
-                    
-                    mime_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
-                    
-                    # Call Gemini 3.8 Flash
-                    from google.genai import types
-                    response = self.client.models.generate_content(
-                        model=self.model_name,
-                        contents=[
-                            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                            SYSTEM_INSTRUCTION
-                        ],
-                        config=types.GenerateContentConfig(
-                            temperature=0.1,
-                            response_mime_type="application/json"
+            models_to_try = [self.model_name]
+            if self.model_name != "gemini-3.5-flash":
+                models_to_try.append("gemini-3.5-flash")
+
+            for current_model in models_to_try:
+                for attempt in range(max_retries + 1):
+                    try:
+                        with open(path, "rb") as f:
+                            image_bytes = f.read()
+                        
+                        mime_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+                        
+                        from google.genai import types
+                        response = self.client.models.generate_content(
+                            model=current_model,
+                            contents=[
+                                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                                SYSTEM_INSTRUCTION
+                            ],
+                            config=types.GenerateContentConfig(
+                                temperature=0.1,
+                                response_mime_type="application/json"
+                            )
                         )
-                    )
-                    
-                    text_out = response.text or ""
-                    parsed = extract_json_from_text(text_out)
-                    if parsed:
-                        return GeminiLineOutput.model_validate(parsed)
-                except (ValidationError, Exception) as e:
-                    print(f"[GeminiOCRReader] Attempt {attempt + 1} failed: {e}")
-                    if attempt == max_retries:
-                        pass  # Proceed to fallback
+                        
+                        text_out = response.text or ""
+                        parsed = extract_json_from_text(text_out)
+                        if parsed:
+                            # Normalize guesses if model returns list of dicts/objects
+                            if "guesses" in parsed and isinstance(parsed["guesses"], list):
+                                norm_guesses = []
+                                for g in parsed["guesses"]:
+                                    if isinstance(g, dict):
+                                        norm_guesses.append(str(g.get("name") or g.get("drug") or list(g.values())[0]))
+                                    else:
+                                        norm_guesses.append(str(g))
+                                parsed["guesses"] = norm_guesses
+                            return GeminiLineOutput.model_validate(parsed)
+
+                    except (ValidationError, Exception) as e:
+                        print(f"[GeminiOCRReader] Model {current_model} attempt {attempt + 1} failed: {e}")
+                        if "503" in str(e) or attempt == max_retries:
+                            break  # Try next fallback model
+
 
         # Offline / Benchmark fallback when API key is missing or testing locally
         return self._offline_simulated_read(path)

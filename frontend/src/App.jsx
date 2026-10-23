@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  ShieldAlert,
   ShieldCheck,
   AlertTriangle,
   Upload,
@@ -8,18 +7,24 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
-  BarChart3,
   RefreshCw,
   Search,
-  Sparkles,
-  ChevronRight,
   ArrowRightLeft,
   Pencil,
-  Eye,
-  Info,
   Lock,
   Unlock,
-  AlertOctagon
+  AlertOctagon,
+  ChevronDown,
+  Sparkles,
+  Layers,
+  ZoomIn,
+  Activity,
+  Sliders,
+  Check,
+  X,
+  Stethoscope,
+  ClipboardCheck,
+  Eye
 } from 'lucide-react';
 
 const API_BASE = '';
@@ -29,18 +34,29 @@ export default function App() {
   const [activePrescription, setActivePrescription] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
-  const [benchmarkMetrics, setBenchmarkMetrics] = useState(null);
-  const [showBenchmarkModal, setShowBenchmarkModal] = useState(false);
   const [editingLineId, setEditingLineId] = useState(null);
   const [customForm, setCustomForm] = useState({ drug: '', dose: '', freq: '', duration: '', notes: '' });
   const [searchResults, setSearchResults] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCropPreview, setSelectedCropPreview] = useState(null);
+  const [showCaseDropdown, setShowCaseDropdown] = useState(false);
+  const [showDispenseModal, setShowDispenseModal] = useState(false);
+  const [processingStage, setProcessingStage] = useState('Analyzing optical quality...');
+  
   const fileInputRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
     fetchSamples();
-    fetchMetrics();
+    
+    // Close dropdown on outside click
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowCaseDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
   const fetchSamples = async () => {
@@ -51,19 +67,7 @@ export default function App() {
         setSamples(data);
       }
     } catch (e) {
-      console.error('Error fetching samples:', e);
-    }
-  };
-
-  const fetchMetrics = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/benchmark/metrics`);
-      if (res.ok) {
-        const data = await res.json();
-        setBenchmarkMetrics(data);
-      }
-    } catch (e) {
-      console.error('Error fetching metrics:', e);
+      console.error('Error fetching clinical cases:', e);
     }
   };
 
@@ -72,6 +76,14 @@ export default function App() {
     setLoading(true);
     setUploadError(null);
     setActivePrescription(null);
+    setProcessingStage('Inspecting blur, lighting & glare...');
+
+    const stageTimer1 = setTimeout(() => {
+      setProcessingStage('Segmenting prescription lines & deskewing...');
+    }, 1200);
+    const stageTimer2 = setTimeout(() => {
+      setProcessingStage('Transcribing handwriting & catalog matching...');
+    }, 2800);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -84,7 +96,7 @@ export default function App() {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Upload failed');
+        throw new Error(err.detail || 'Prescription ingestion failed');
       }
 
       const data = await res.json();
@@ -92,6 +104,8 @@ export default function App() {
     } catch (e) {
       setUploadError(e.message);
     } finally {
+      clearTimeout(stageTimer1);
+      clearTimeout(stageTimer2);
       setLoading(false);
     }
   };
@@ -99,11 +113,14 @@ export default function App() {
   const loadSample = async (sampleId) => {
     setLoading(true);
     setUploadError(null);
+    setShowCaseDropdown(false);
+    setProcessingStage('Loading clinical case file...');
+
     try {
       const res = await fetch(`${API_BASE}/api/sample-prescriptions/${sampleId}/load`, {
         method: 'POST',
       });
-      if (!res.ok) throw new Error('Failed to load sample');
+      if (!res.ok) throw new Error('Failed to load clinical case');
       const data = await res.json();
       setActivePrescription(data);
     } catch (e) {
@@ -152,39 +169,44 @@ export default function App() {
           return l;
         });
 
-        // Recheck all_can_confirm
-        const allReviewed = updatedLines.every(
-          (l) => l.status === 'confirmed' || l.status === 'corrected' || l.confidence.can_confirm
+        const hasUnapprovedRed = updatedLines.some(
+          (l) => l.confidence.level === 'red' && l.status === 'pending'
         );
 
-        return { ...prev, lines: updatedLines, all_can_confirm: allReviewed };
+        return {
+          ...prev,
+          lines: updatedLines,
+          all_can_confirm: !hasUnapprovedRed,
+        };
       });
 
       setEditingLineId(null);
     } catch (e) {
-      alert(e.message);
+      alert(`Error confirming line: ${e.message}`);
     }
   };
 
   const handleConfirmAll = async () => {
     if (!activePrescription) return;
     try {
-      const res = await fetch(
-        `${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/confirm-all`,
-        { method: 'POST' }
-      );
+      const res = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/confirm-all`, {
+        method: 'POST',
+      });
       if (!res.ok) {
         const err = await res.json();
-        alert(err.detail || 'Error confirming all');
+        alert(err.detail || 'Batch confirmation failed');
         return;
       }
-      alert('All lines verified and prescription successfully archived into hospital database.');
+
       setActivePrescription((prev) => ({
         ...prev,
         lines: prev.lines.map((l) => ({ ...l, status: 'confirmed' })),
+        all_can_confirm: true,
       }));
+
+      setShowDispenseModal(true);
     } catch (e) {
-      alert(e.message);
+      alert(`Error confirming prescription: ${e.message}`);
     }
   };
 
@@ -201,74 +223,144 @@ export default function App() {
         setSearchResults(data);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Drug search error:', e);
     }
   };
 
-  // Determine if confirm all is blocked by low-confidence unreviewed red lines
-  const unreviewedRedCount = activePrescription?.lines
-    ? activePrescription.lines.filter(
-        (l) => l.confidence.level === 'red' && l.status === 'pending'
-      ).length
-    : 0;
+  const unreviewedRedCount = activePrescription?.lines?.filter(
+    (l) => l.confidence.level === 'red' && l.status === 'pending'
+  ).length || 0;
+
+  const totalLines = activePrescription?.lines?.length || 0;
+  const confirmedLinesCount = activePrescription?.lines?.filter(
+    (l) => l.status === 'confirmed' || l.status === 'corrected'
+  ).length || 0;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Header */}
+      {/* Top Professional Hospital Workstation Navbar */}
       <header
         style={{
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(11, 15, 25, 0.85)',
-          backdropFilter: 'blur(12px)',
+          background: 'rgba(8, 13, 26, 0.85)',
+          backdropFilter: 'blur(20px)',
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          padding: '14px 28px',
+          padding: '12px 28px',
         }}
       >
-        <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div
+          style={{
+            maxWidth: 1520,
+            margin: '0 auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+          }}
+        >
+          {/* Brand Logo & Clinical System Status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div
               style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)',
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.35)',
               }}
             >
-              <ShieldCheck size={24} color="#ffffff" />
+              <Stethoscope size={24} color="#ffffff" />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h1 style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.02em' }}>MedMatch Rx</h1>
-                <span className="glass-pill" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-                  <span className="pulse-dot" style={{ background: '#10b981' }} /> Active
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
+                  MEDMATCH <span style={{ color: '#06b6d4' }}>RX</span>
+                </h1>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.68rem',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(6, 182, 212, 0.15)',
+                    color: '#38bdf8',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    fontWeight: 700,
+                  }}
+                >
+                  CLINICAL WORKSTATION
                 </span>
               </div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-sub)' }}>
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-sub)', marginTop: 1 }}>
                 Handwriting Reading · Look-Alike Safety Verification · Clinical Validation
               </p>
             </div>
           </div>
 
+          {/* System Telemetry Badges */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="glass-pill" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
-              <Sparkles size={14} color="#06b6d4" /> Gemini 3.8 Flash + OpenCV
-            </span>
+            <div className="glass-pill" style={{ borderColor: 'rgba(16, 185, 129, 0.25)', color: '#34d399' }}>
+              <span className="pulse-dot" style={{ background: '#10b981' }} />
+              <span>NLEM 2022 CATALOG (91 DRUGS)</span>
+            </div>
 
-            <button
-              id="btn-slide7-metrics"
-              className="btn btn-secondary"
-              onClick={() => setShowBenchmarkModal(true)}
-              style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-            >
-              <BarChart3 size={16} color="#06b6d4" />
-              Slide 7 Benchmark
-            </button>
+            <div className="glass-pill" style={{ borderColor: 'rgba(6, 182, 212, 0.25)', color: '#38bdf8' }}>
+              <ShieldCheck size={14} color="#06b6d4" />
+              <span>LASA GUARD ACTIVE</span>
+            </div>
+
+            {/* Quick Test Case Loader Dropdown */}
+            <div style={{ position: 'relative' }} ref={dropdownRef}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '8px 14px', fontSize: '0.82rem', gap: 6 }}
+                onClick={() => setShowCaseDropdown(!showCaseDropdown)}
+              >
+                <ClipboardCheck size={15} color="#06b6d4" />
+                <span>Load Test Case</span>
+                <ChevronDown size={14} color="var(--text-muted)" />
+              </button>
+
+              {showCaseDropdown && (
+                <div className="dropdown-menu">
+                  <div style={{ padding: '8px 14px', fontSize: '0.7rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Select Clinical Scenario
+                  </div>
+                  {samples.map((s) => (
+                    <div
+                      key={s.id}
+                      className="dropdown-item"
+                      onClick={() => loadSample(s.id)}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#f8fafc' }}>{s.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.description}</div>
+                      </div>
+                      <span
+                        className="badge-tag"
+                        style={{
+                          background:
+                            s.category === 'clean' ? 'rgba(16, 185, 129, 0.2)' :
+                            s.category === 'lookalike' ? 'rgba(239, 68, 68, 0.2)' :
+                            s.category === 'messy' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(148, 163, 184, 0.2)',
+                          color:
+                            s.category === 'clean' ? '#34d399' :
+                            s.category === 'lookalike' ? '#f87171' :
+                            s.category === 'messy' ? '#fbbf24' : '#94a3b8',
+                        }}
+                      >
+                        {s.category}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {activePrescription && (
               <button
@@ -278,102 +370,69 @@ export default function App() {
                   setUploadError(null);
                 }}
                 style={{ padding: '8px 12px' }}
-                title="Reset session"
+                title="Start new prescription"
               >
                 <RefreshCw size={15} />
+                <span style={{ fontSize: '0.82rem' }}>New Upload</span>
               </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main style={{ maxWidth: 1400, margin: '0 auto', padding: '24px', width: '100%', flex: 1 }}>
-        {/* Step 11: Demo Scenarios Selector for Slide 7 */}
-        <section style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Slide 7 Demo Scenarios
-              </span>
-              <span className="glass-pill" style={{ fontSize: '0.72rem' }}>1-Click Instant Run</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-            {samples.map((s) => (
+      {/* Main Workspace Stage */}
+      <main style={{ maxWidth: 1520, margin: '0 auto', padding: '24px 28px', width: '100%', flex: 1 }}>
+        {/* Upload Hero Section (Shown when no prescription loaded) */}
+        {!activePrescription && (
+          <div style={{ maxWidth: 960, margin: '20px auto 40px' }}>
+            {/* Hero Header */}
+            <div style={{ textAlign: 'center', marginBottom: 32 }}>
               <div
-                key={s.id}
-                id={`scenario-card-${s.id}`}
-                className="glass-panel"
-                onClick={() => loadSample(s.id)}
                 style={{
-                  padding: '14px 16px',
-                  cursor: 'pointer',
-                  border: activePrescription?.prescription_id === s.id ? '1px solid #06b6d4' : '1px solid var(--bg-card-border)',
-                  background: activePrescription?.prescription_id === s.id ? 'rgba(6, 182, 212, 0.12)' : 'var(--bg-card)',
-                  transition: 'all 0.2s ease',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 14px',
+                  borderRadius: 9999,
+                  background: 'rgba(6, 182, 212, 0.1)',
+                  border: '1px solid rgba(6, 182, 212, 0.25)',
+                  color: '#38bdf8',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  marginBottom: 16,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      background:
-                        s.category === 'clean'
-                          ? 'rgba(16, 185, 129, 0.2)'
-                          : s.category === 'lookalike'
-                          ? 'rgba(239, 68, 68, 0.2)'
-                          : s.category === 'messy'
-                          ? 'rgba(245, 158, 11, 0.2)'
-                          : 'rgba(148, 163, 184, 0.2)',
-                      color:
-                        s.category === 'clean'
-                          ? '#34d399'
-                          : s.category === 'lookalike'
-                          ? '#f87171'
-                          : s.category === 'messy'
-                          ? '#fbbf24'
-                          : '#94a3b8',
-                    }}
-                  >
-                    {s.category}
-                  </span>
-                  <ChevronRight size={15} color="var(--text-sub)" />
-                </div>
-                <h4 style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: 4 }}>
-                  {s.name}
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                  {s.description}
-                </p>
+                <Activity size={15} />
+                <span>INTELLIGENT PRESCRIPTION VERIFICATION WORKSTATION</span>
               </div>
-            ))}
-          </div>
-        </section>
+              <h2 style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 12 }}>
+                High-Precision Clinical Handwriting Ingestion
+              </h2>
+              <p style={{ fontSize: '0.96rem', color: 'var(--text-muted)', maxWidth: 640, margin: '0 auto', lineHeight: 1.6 }}>
+                Upload doctor prescriptions, outpatient slips, or handwritten order sheets. Automatically verified against the Indian National List of Essential Medicines with sound-alike hazard safeguards.
+              </p>
+            </div>
 
-        {/* Upload Zone (Visible if no prescription or if uploading) */}
-        {!activePrescription && (
-          <section className="glass-panel" style={{ padding: '36px', textAlign: 'center', marginBottom: 24 }}>
+            {/* Prescription Ingestion Dropzone */}
             <div
+              className="glass-panel"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
                 if (e.dataTransfer.files?.[0]) handleFileUpload(e.dataTransfer.files[0]);
               }}
               style={{
+                padding: '48px 32px',
+                textAlign: 'center',
+                position: 'relative',
+                overflow: 'hidden',
                 border: '2px dashed rgba(6, 182, 212, 0.35)',
-                borderRadius: 16,
-                padding: '40px 20px',
-                background: 'rgba(6, 182, 212, 0.03)',
                 cursor: 'pointer',
               }}
               onClick={() => fileInputRef.current?.click()}
             >
+              {loading && <div className="scan-line" />}
+
               <input
                 id="file-upload-input"
                 type="file"
@@ -384,99 +443,152 @@ export default function App() {
                   if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
                 }}
               />
+
               <div
                 style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  background: 'rgba(6, 182, 212, 0.12)',
+                  width: 76,
+                  height: 76,
+                  borderRadius: 20,
+                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(2, 132, 199, 0.25) 100%)',
+                  border: '1px solid rgba(6, 182, 212, 0.4)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  margin: '0 auto 16px',
+                  margin: '0 auto 20px',
                   color: '#06b6d4',
+                  boxShadow: '0 0 25px rgba(6, 182, 212, 0.25)',
                 }}
               >
-                <Upload size={30} />
+                <Upload size={34} />
               </div>
 
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: 8 }}>
-                Upload Handwritten Doctor Prescription
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: 8, color: '#f8fafc' }}>
+                Drag & Drop Handwritten Prescription
               </h3>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto 18px' }}>
-                Drag and drop image or snap with phone camera. Evaluated with OpenCV blur/glare inspection and Gemini 3.8 Flash multimodal recognition.
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 24 }}>
+                Supports JPG, PNG, WEBP, or direct camera captures. Automatically deskewed and enhanced.
               </p>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                 <button
                   id="btn-select-file"
                   className="btn btn-primary"
+                  style={{ padding: '12px 24px', fontSize: '0.92rem' }}
                   onClick={(e) => {
                     e.stopPropagation();
                     fileInputRef.current?.click();
                   }}
                 >
-                  <FileText size={16} /> Choose Image File
+                  <FileText size={18} /> Select Image File
                 </button>
                 <button
                   id="btn-camera-capture"
                   className="btn btn-secondary"
+                  style={{ padding: '12px 20px', fontSize: '0.92rem' }}
                   onClick={(e) => {
                     e.stopPropagation();
                     fileInputRef.current?.click();
                   }}
                 >
-                  <Camera size={16} /> Camera Photo
+                  <Camera size={18} /> Snap Photo
                 </button>
               </div>
+
+              {/* Loading Indicator */}
+              {loading && (
+                <div
+                  style={{
+                    marginTop: 32,
+                    padding: '16px 24px',
+                    borderRadius: 12,
+                    background: 'rgba(6, 182, 212, 0.1)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  <RefreshCw size={22} className="pulse-dot" color="#06b6d4" />
+                  <span style={{ fontSize: '0.92rem', color: '#38bdf8', fontWeight: 600 }}>
+                    {processingStage}
+                  </span>
+                </div>
+              )}
+
+              {uploadError && (
+                <div
+                  style={{
+                    marginTop: 24,
+                    padding: '14px 20px',
+                    borderRadius: 10,
+                    background: 'var(--red-bg)',
+                    border: '1px solid var(--red-border)',
+                    color: '#f87171',
+                    fontSize: '0.9rem',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <AlertTriangle size={20} color="#f87171" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
 
-            {loading && (
-              <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                <RefreshCw size={20} className="pulse-dot" color="#06b6d4" />
-                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                  Processing image with OpenCV Deskew + Gemini OCR + RapidFuzz Matching...
-                </span>
+            {/* Quick Test Case Chips (Integrated naturally) */}
+            <div style={{ marginTop: 24, textAlign: 'center' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-sub)', fontWeight: 600, marginRight: 12 }}>
+                OR RUN PRELOADED CLINICAL CASES:
+              </span>
+              <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                {samples.map((s) => (
+                  <button
+                    key={s.id}
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 14px', fontSize: '0.8rem', borderRadius: 9999 }}
+                    onClick={() => loadSample(s.id)}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background:
+                          s.category === 'clean' ? '#10b981' :
+                          s.category === 'lookalike' ? '#ef4444' :
+                          s.category === 'messy' ? '#f59e0b' : '#94a3b8',
+                      }}
+                    />
+                    <span>{s.name}</span>
+                  </button>
+                ))}
               </div>
-            )}
-
-            {uploadError && (
-              <div
-                style={{
-                  marginTop: 20,
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  background: 'var(--red-bg)',
-                  border: '1px solid var(--red-border)',
-                  color: '#f87171',
-                  fontSize: '0.88rem',
-                }}
-              >
-                {uploadError}
-              </div>
-            )}
-          </section>
+            </div>
+          </div>
         )}
 
-        {/* Step 7: Image Quality Rejected Banner */}
+        {/* Quality Check Rejection Banner */}
         {activePrescription && !activePrescription.quality_check.passed && (
-          <section
+          <div
             id="qc-rejection-banner"
             className="glass-panel"
             style={{
-              padding: '24px',
+              padding: '28px',
               border: '1px solid var(--red-border)',
-              background: 'rgba(239, 68, 68, 0.1)',
-              marginBottom: 24,
+              background: 'rgba(239, 68, 68, 0.08)',
+              marginBottom: 28,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
               <div
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 12,
+                  width: 52,
+                  height: 52,
+                  borderRadius: 14,
                   background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -484,30 +596,30 @@ export default function App() {
                   flexShrink: 0,
                 }}
               >
-                <XCircle size={28} />
+                <XCircle size={30} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f87171' }}>
-                    Photo Quality Check Failed — Retake Required
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f87171' }}>
+                    Optical Quality Gating Failed — Retake Required
                   </h3>
                   <span className="glass-pill" style={{ color: '#f87171', borderColor: 'var(--red-border)' }}>
-                    OpenCV Guard Active
+                    SAFETY INTERCEPT
                   </span>
                 </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: 12 }}>
+                <p style={{ fontSize: '0.92rem', color: 'var(--text-main)', marginBottom: 16 }}>
                   {activePrescription.quality_check.message}
                 </p>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
                   <div className="glass-pill" style={{ fontFamily: 'var(--font-mono)' }}>
-                    Focus Score: {activePrescription.quality_check.blur_score} (min: 70.0)
+                    Focus Clarity: {activePrescription.quality_check.blur_score} (min threshold: 70.0)
                   </div>
                   <div className="glass-pill" style={{ fontFamily: 'var(--font-mono)' }}>
-                    Mean Brightness: {activePrescription.quality_check.mean_brightness}/255 (min: 50.0)
+                    Mean Illumination: {activePrescription.quality_check.mean_brightness}/255 (min threshold: 50.0)
                   </div>
                   <div className="glass-pill" style={{ fontFamily: 'var(--font-mono)' }}>
-                    Glare Washout: {(activePrescription.quality_check.glare_share * 100).toFixed(1)}% (max: 10%)
+                    Specular Glare: {(activePrescription.quality_check.glare_share * 100).toFixed(1)}% (max allowed: 10%)
                   </div>
                 </div>
 
@@ -523,48 +635,93 @@ export default function App() {
                 </button>
               </div>
             </div>
-          </section>
+          </div>
         )}
 
-        {/* Step 9: Review Screen (Prescription details and line item cards) */}
+        {/* Prescription Verification Review Stage */}
         {activePrescription && activePrescription.quality_check.passed && (
-          <section>
-            {/* Header info bar */}
+          <div>
+            {/* Top Verification Header Bar */}
             <div
               className="glass-panel"
               style={{
-                padding: '16px 20px',
-                marginBottom: 20,
+                padding: '18px 24px',
+                marginBottom: 24,
                 display: 'flex',
                 flexWrap: 'wrap',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: 16,
+                gap: 20,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <FileText size={22} color="#06b6d4" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 10,
+                    background: 'rgba(6, 182, 212, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#06b6d4',
+                  }}
+                >
+                  <FileText size={22} />
+                </div>
                 <div>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
-                    Prescription ID: <span style={{ fontFamily: 'var(--font-mono)', color: '#06b6d4' }}>{activePrescription.prescription_id}</span>
-                  </h3>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {activePrescription.total_lines} lines detected · OpenCV Deskew: {activePrescription.quality_check.deskew_angle}° tilt corrected
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                      PRESCRIPTION <span style={{ fontFamily: 'var(--font-mono)', color: '#06b6d4' }}>#{activePrescription.prescription_id}</span>
+                    </h3>
+                    <span className="glass-pill" style={{ fontSize: '0.74rem' }}>
+                      {totalLines} Medication Lines Extracted
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    Auto-Deskew: {activePrescription.quality_check.deskew_angle}° rotation applied · Blur Score: {activePrescription.quality_check.blur_score}
                   </p>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Safety Lock & Batch Approve */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 {unreviewedRedCount > 0 ? (
-                  <span className="glass-pill" style={{ color: '#f87171', borderColor: 'var(--red-border)' }}>
-                    <AlertTriangle size={14} color="#f87171" />
-                    {unreviewedRedCount} Red line{unreviewedRedCount > 1 ? 's' : ''} require pharmacist review
-                  </span>
+                  <div
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 10,
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: '#f87171',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <AlertTriangle size={15} color="#f87171" />
+                    <span>{unreviewedRedCount} Red Line{unreviewedRedCount > 1 ? 's' : ''} Require Pharmacist Sign-Off</span>
+                  </div>
                 ) : (
-                  <span className="glass-pill" style={{ color: '#34d399', borderColor: 'var(--green-border)' }}>
-                    <CheckCircle2 size={14} color="#34d399" />
-                    All lines verified
-                  </span>
+                  <div
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 10,
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: '#34d399',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <CheckCircle2 size={15} color="#34d399" />
+                    <span>All {totalLines} Lines Clinically Verified</span>
+                  </div>
                 )}
 
                 <button
@@ -572,582 +729,706 @@ export default function App() {
                   className="btn btn-success"
                   disabled={unreviewedRedCount > 0}
                   onClick={handleConfirmAll}
-                  title={
-                    unreviewedRedCount > 0
-                      ? 'Confirm button blocked until every red line is reviewed'
-                      : 'Approve full prescription'
-                  }
+                  style={{ padding: '10px 20px' }}
                 >
                   {unreviewedRedCount > 0 ? <Lock size={16} /> : <Unlock size={16} />}
-                  Confirm Full Prescription
+                  <span>Sign-Off & Dispense Rx</span>
                 </button>
               </div>
             </div>
 
-            {/* Line items list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {activePrescription.lines.map((line) => {
-                const isRed = line.confidence.level === 'red';
-                const isYellow = line.confidence.level === 'yellow';
-                const isGreen = line.confidence.level === 'green';
-                const isConfirmed = line.status === 'confirmed' || line.status === 'corrected';
-                const isEditing = editingLineId === line.line_id;
+            {/* Split View: Prescription Image Stage + Line Verification Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 24, alignItems: 'start' }}>
+              {/* Left Column: Full Prescription Viewer & Quality Radar */}
+              <div style={{ position: 'sticky', top: 90 }}>
+                <div className="glass-panel" style={{ padding: '18px', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-sub)', textTransform: 'uppercase' }}>
+                      SOURCE PRESCRIPTION IMAGE
+                    </span>
+                    <button
+                      className="glass-pill"
+                      style={{ cursor: 'pointer', fontSize: '0.74rem' }}
+                      onClick={() => setSelectedCropPreview(activePrescription.image_url)}
+                    >
+                      <ZoomIn size={13} /> Fullscreen
+                    </button>
+                  </div>
 
-                return (
                   <div
-                    key={line.line_id}
-                    id={`line-card-${line.line_id}`}
-                    className="glass-panel"
                     style={{
-                      padding: '20px',
-                      borderLeft: `4px solid ${
-                        isConfirmed ? '#10b981' : isRed ? '#ef4444' : isYellow ? '#f59e0b' : '#10b981'
-                      }`,
-                      transition: 'all 0.2s ease',
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      background: '#040711',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      maxHeight: 460,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    {/* Top Row: Line number + Confidence Badge + Status */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.85rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            background: 'rgba(255, 255, 255, 0.08)',
-                          }}
-                        >
-                          Line #{line.line_id}
-                        </span>
+                    <img
+                      src={activePrescription.image_url}
+                      alt="Prescription Scan"
+                      style={{ width: '100%', height: 'auto', maxHeight: 460, objectFit: 'contain' }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                  </div>
 
-                        <span
-                          className={`glass-pill badge-${line.confidence.level}`}
-                          style={{ fontWeight: 700, fontSize: '0.78rem' }}
-                        >
-                          <span
-                            className="pulse-dot"
-                            style={{
-                              background: isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444',
-                            }}
-                          />
-                          {line.confidence.level.toUpperCase()} CONFIDENCE ({(line.confidence.score * 100).toFixed(0)}%)
-                        </span>
-
-                        {line.status === 'corrected' && (
-                          <span className="glass-pill" style={{ color: '#38bdf8' }}>
-                            <Pencil size={12} /> Pharmacist Corrected
-                          </span>
-                        )}
-                        {line.status === 'confirmed' && (
-                          <span className="glass-pill" style={{ color: '#34d399' }}>
-                            <CheckCircle2 size={12} /> Approved
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Right Action: Quick Approve */}
-                      {!isEditing && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <button
-                            id={`btn-edit-line-${line.line_id}`}
-                            className="btn btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                            onClick={() => {
-                              setEditingLineId(line.line_id);
-                              const cleanVal = (v) => (!v || v.toLowerCase() === 'unreadable' || v.toLowerCase() === 'unknown') ? '' : v;
-                              setCustomForm({
-                                drug: cleanVal(line.final_drug || line.selected_candidate?.brand_name),
-                                dose: cleanVal(line.final_dose || line.dose_raw),
-                                freq: cleanVal(line.final_freq || line.freq_raw),
-                                duration: cleanVal(line.final_duration || line.duration_raw),
-                                notes: '',
-                              });
-                            }}
-                          >
-                            <Pencil size={14} /> Edit
-                          </button>
-
-                          <button
-                            id={`btn-approve-line-${line.line_id}`}
-                            className={`btn ${isConfirmed ? 'btn-secondary' : 'btn-success'}`}
-                            style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-                            disabled={isRed && line.status === 'pending'}
-                            onClick={() => handleConfirmLine(line.line_id)}
-                          >
-                            <CheckCircle2 size={14} />
-                            {isConfirmed ? 'Re-Approve' : 'Approve Line'}
-                          </button>
-                        </div>
-                      )}
+                  {/* Optical Gating HUD */}
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-sub)', textTransform: 'uppercase', marginBottom: 8 }}>
+                      OPTICAL QUALITY AUDIT
                     </div>
-
-                    {/* Middle Section: Line Crop next to Extracted Fields */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 2fr', gap: 20 }}>
-                      {/* Left: Cropped handwritten image */}
-                      <div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-sub)', marginBottom: 6 }}>
-                          ORIGINAL HANDWRITTEN CROP:
-                        </div>
-                        <div
-                          style={{
-                            background: '#ffffff',
-                            borderRadius: 10,
-                            padding: 8,
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'zoom-in',
-                          }}
-                          onClick={() => setSelectedCropPreview(line.crop)}
-                        >
-                          <img
-                            src={line.crop}
-                            alt={`Crop Line ${line.line_id}`}
-                            style={{ maxWidth: '100%', maxHeight: 90, objectFit: 'contain' }}
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                        </div>
-
-                        {/* Raw OCR output readout */}
-                        <div style={{ marginTop: 8, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          <span style={{ color: 'var(--text-sub)' }}>Gemini Raw Guesses: </span>
-                          <span style={{ fontFamily: 'var(--font-mono)' }}>{line.guesses.join(', ') || 'unreadable'}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Focus (Blur)</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#34d399', marginTop: 2 }}>
+                          {activePrescription.quality_check.blur_score}
                         </div>
                       </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Illumination</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8', marginTop: 2 }}>
+                          {activePrescription.quality_check.mean_brightness}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-sub)' }}>Glare Wash</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                          {(activePrescription.quality_check.glare_share * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-                      {/* Right: Matched Drug, Dose, Freq, Duration */}
-                      <div>
-                        {/* Drug Name Header */}
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                            <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                              {line.final_drug || line.selected_candidate?.brand_name || 'Unreadable'}
+              {/* Right Column: Line-by-Line Medication Verification Stream */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {activePrescription.lines.map((line) => {
+                  const isRed = line.confidence.level === 'red';
+                  const isYellow = line.confidence.level === 'yellow';
+                  const isGreen = line.confidence.level === 'green';
+                  const isConfirmed = line.status === 'confirmed' || line.status === 'corrected';
+                  const isEditing = editingLineId === line.line_id;
+
+                  return (
+                    <div
+                      key={line.line_id}
+                      id={`line-card-${line.line_id}`}
+                      className="glass-panel"
+                      style={{
+                        padding: '22px 24px',
+                        borderLeft: `5px solid ${
+                          isConfirmed ? '#10b981' : isRed ? '#ef4444' : isYellow ? '#f59e0b' : '#10b981'
+                        }`,
+                        background: isConfirmed ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-card)',
+                      }}
+                    >
+                      {/* Line Card Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '0.85rem',
+                              fontWeight: 700,
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              background: 'rgba(255, 255, 255, 0.08)',
+                              color: '#ffffff',
+                            }}
+                          >
+                            LINE #{line.line_id}
+                          </span>
+
+                          <span
+                            className={`glass-pill badge-${line.confidence.level}`}
+                            style={{ fontWeight: 700, fontSize: '0.78rem' }}
+                          >
+                            <span
+                              className="pulse-dot"
+                              style={{
+                                background: isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444',
+                              }}
+                            />
+                            {line.confidence.level.toUpperCase()} CONFIDENCE ({(line.confidence.score * 100).toFixed(0)}%)
+                          </span>
+
+                          {line.status === 'corrected' && (
+                            <span className="glass-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                              <Pencil size={12} /> Pharmacist Corrected
                             </span>
-                            {line.selected_candidate?.generic_name && (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                ({line.selected_candidate.generic_name})
-                              </span>
-                            )}
-                            {line.selected_candidate?.form && (
-                              <span className="glass-pill" style={{ fontSize: '0.72rem' }}>
-                                {line.selected_candidate.form}
-                              </span>
-                            )}
+                          )}
+                          {line.status === 'confirmed' && (
+                            <span className="glass-pill" style={{ color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                              <CheckCircle2 size={12} /> Approved
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Top Line Action Buttons */}
+                        {!isEditing && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <button
+                              id={`btn-edit-line-${line.line_id}`}
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+                              onClick={() => {
+                                setEditingLineId(line.line_id);
+                                const cleanVal = (v) => (!v || v.toLowerCase() === 'unreadable' || v.toLowerCase() === 'unknown') ? '' : v;
+                                setCustomForm({
+                                  drug: cleanVal(line.final_drug || line.selected_candidate?.brand_name),
+                                  dose: cleanVal(line.final_dose || line.dose_raw),
+                                  freq: cleanVal(line.final_freq || line.freq_raw),
+                                  duration: cleanVal(line.final_duration || line.duration_raw),
+                                  notes: '',
+                                });
+                              }}
+                            >
+                              <Pencil size={14} /> Modify
+                            </button>
+
+                            <button
+                              id={`btn-approve-line-${line.line_id}`}
+                              className={`btn ${isConfirmed ? 'btn-secondary' : 'btn-success'}`}
+                              style={{ padding: '6px 16px', fontSize: '0.82rem' }}
+                              disabled={isRed && line.status === 'pending'}
+                              onClick={() => handleConfirmLine(line.line_id)}
+                              title={isRed && line.status === 'pending' ? 'Pharmacist review required for red line' : 'Approve this line'}
+                            >
+                              <CheckCircle2 size={15} />
+                              {isConfirmed ? 'Re-Verify' : 'Approve Line'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Main Line Content: Crop vs Drug Identification */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 2fr', gap: 24 }}>
+                        {/* Left: Original Handwritten Crop Preview */}
+                        <div>
+                          <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-sub)', marginBottom: 8, textTransform: 'uppercase' }}>
+                            ORIGINAL HANDWRITTEN SEGMENT:
+                          </div>
+                          <div
+                            style={{
+                              background: '#ffffff',
+                              borderRadius: 12,
+                              padding: 10,
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'zoom-in',
+                              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+                            }}
+                            onClick={() => setSelectedCropPreview(line.crop)}
+                            title="Click to zoom image"
+                          >
+                            <img
+                              src={line.crop}
+                              alt={`Handwritten Line ${line.line_id}`}
+                              style={{ maxWidth: '100%', maxHeight: 95, objectFit: 'contain' }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 10, fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                            <span style={{ color: 'var(--text-sub)' }}>Detected Handwriting: </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', color: '#f8fafc', fontWeight: 600 }}>
+                              {line.guesses.join(', ') || 'unreadable'}
+                            </span>
                           </div>
                         </div>
 
-                        {/* Step 6: Confusable Look-Alike Warning Banner */}
-                        {line.lookalike?.is_flagged && (
-                          <div
-                            id={`lookalike-warning-${line.line_id}`}
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: 8,
-                              background: 'rgba(239, 68, 68, 0.15)',
-                              border: '1px solid rgba(239, 68, 68, 0.4)',
-                              marginBottom: 14,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 12,
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <AlertOctagon size={20} color="#f87171" />
-                              <span style={{ fontSize: '0.82rem', color: '#fca5a5', lineHeight: 1.4 }}>
-                                {line.lookalike.warning_message}
+                        {/* Right: Identified Drug, Safety Hazard & Regimen */}
+                        <div>
+                          {/* Identified Drug Brand & Generic */}
+                          <div style={{ marginBottom: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                              <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                                {line.final_drug || line.selected_candidate?.brand_name || 'Illegible / Unreadable'}
                               </span>
+                              {line.selected_candidate?.generic_name && (
+                                <span style={{ fontSize: '0.92rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                  ({line.selected_candidate.generic_name})
+                                </span>
+                              )}
+                              {line.selected_candidate?.form && (
+                                <span
+                                  style={{
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '0.72rem',
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    background: 'rgba(6, 182, 212, 0.15)',
+                                    color: '#38bdf8',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {line.selected_candidate.form}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Look-Alike / Sound-Alike (LASA) Confusable Pair Alert */}
+                          {line.lookalike?.is_flagged && (
+                            <div
+                              id={`lookalike-warning-${line.line_id}`}
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: 10,
+                                background: 'rgba(239, 68, 68, 0.14)',
+                                border: '1px solid rgba(239, 68, 68, 0.45)',
+                                marginBottom: 16,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 14,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <AlertOctagon size={22} color="#f87171" />
+                                <span style={{ fontSize: '0.84rem', color: '#fca5a5', lineHeight: 1.45, fontWeight: 500 }}>
+                                  {line.lookalike.warning_message}
+                                </span>
+                              </div>
+
+                              {line.lookalike.paired_drug && (
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{
+                                    padding: '6px 14px',
+                                    fontSize: '0.78rem',
+                                    background: 'rgba(239, 68, 68, 0.25)',
+                                    borderColor: 'rgba(239, 68, 68, 0.55)',
+                                    color: '#ffffff',
+                                    whiteSpace: 'nowrap',
+                                    fontWeight: 700,
+                                  }}
+                                  onClick={() => {
+                                    handleConfirmLine(line.line_id, {
+                                      final_drug: line.lookalike.paired_drug,
+                                      final_dose: line.final_dose || line.dose_raw,
+                                      final_freq: line.final_freq || line.freq_raw,
+                                      final_duration: line.final_duration || line.duration_raw,
+                                      corrected_by: 'pharmacist',
+                                      notes: `Swapped confusable pair from ${line.selected_candidate?.brand_name} to ${line.lookalike.paired_drug}`,
+                                    });
+                                  }}
+                                >
+                                  <ArrowRightLeft size={14} /> Swap to {line.lookalike.paired_drug}
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Clinical Regimen Fields Grid */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                            {/* Dose */}
+                            <div
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.04)',
+                                borderRadius: 10,
+                                padding: '10px 14px',
+                                border: !line.validation.dose_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
+                              }}
+                            >
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                Prescribed Dose
+                              </div>
+                              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
+                                {line.final_dose || line.validation.dose_standardized || line.dose_raw || 'Missing'}
+                              </div>
+                              {!line.validation.dose_valid && (
+                                <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: 4, fontWeight: 500 }}>
+                                  {line.validation.dose_flag}
+                                </div>
+                              )}
                             </div>
 
-                            {/* 1-Click Swap Button for look-alike pair */}
-                            {line.lookalike.paired_drug && (
+                            {/* Frequency */}
+                            <div
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.04)',
+                                borderRadius: 10,
+                                padding: '10px 14px',
+                                border: !line.validation.freq_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
+                              }}
+                            >
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                Standard Frequency
+                              </div>
+                              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
+                                {line.final_freq || line.validation.freq_standardized || line.freq_raw || 'Missing'}
+                              </div>
+                              {!line.validation.freq_valid && (
+                                <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: 4, fontWeight: 500 }}>
+                                  {line.validation.freq_flag}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Duration */}
+                            <div
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.04)',
+                                borderRadius: 10,
+                                padding: '10px 14px',
+                                border: !line.validation.duration_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
+                              }}
+                            >
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                Duration
+                              </div>
+                              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>
+                                {line.final_duration || line.validation.duration_standardized || line.duration_raw || 'Missing'}
+                              </div>
+                              {!line.validation.duration_valid && (
+                                <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: 4, fontWeight: 500 }}>
+                                  {line.validation.duration_flag}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* One-Click Fast Fix Candidates */}
+                          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-sub)', fontWeight: 700, textTransform: 'uppercase' }}>
+                              One-Click Fast Fix:
+                            </span>
+                            {line.top_candidates?.map((cand, cIdx) => (
                               <button
+                                key={cIdx}
+                                id={`one-click-pill-${line.line_id}-${cand.brand_name}`}
                                 className="btn btn-secondary"
                                 style={{
-                                  padding: '5px 10px',
-                                  fontSize: '0.75rem',
-                                  background: 'rgba(239, 68, 68, 0.25)',
-                                  borderColor: 'rgba(239, 68, 68, 0.5)',
-                                  color: '#ffffff',
-                                  whiteSpace: 'nowrap',
+                                  padding: '4px 12px',
+                                  fontSize: '0.8rem',
+                                  borderRadius: 9999,
+                                  background:
+                                    (line.final_drug || line.selected_candidate?.brand_name) === cand.brand_name
+                                      ? 'rgba(6, 182, 212, 0.22)'
+                                      : 'rgba(255, 255, 255, 0.05)',
+                                  borderColor:
+                                    (line.final_drug || line.selected_candidate?.brand_name) === cand.brand_name
+                                      ? '#06b6d4'
+                                      : 'rgba(255, 255, 255, 0.1)',
                                 }}
                                 onClick={() => {
                                   handleConfirmLine(line.line_id, {
-                                    final_drug: line.lookalike.paired_drug,
+                                    final_drug: cand.brand_name,
                                     final_dose: line.final_dose || line.dose_raw,
                                     final_freq: line.final_freq || line.freq_raw,
                                     final_duration: line.final_duration || line.duration_raw,
                                     corrected_by: 'pharmacist',
-                                    notes: `Swapped confusable pair from ${line.selected_candidate?.brand_name} to ${line.lookalike.paired_drug}`,
+                                    notes: `Selected candidate #${cIdx + 1} from match ranking`,
                                   });
                                 }}
                               >
-                                <ArrowRightLeft size={13} /> Swap to {line.lookalike.paired_drug}
+                                {cand.brand_name} ({(cand.combined_score * 100).toFixed(0)}%)
                               </button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Clinical Validation Badges Grid */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
-                          {/* Dose */}
-                          <div
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.04)',
-                              borderRadius: 8,
-                              padding: '8px 12px',
-                              border: !line.validation.dose_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)', textTransform: 'uppercase' }}>Dose</div>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)', marginTop: 2 }}>
-                              {line.final_dose || line.validation.dose_standardized || line.dose_raw || 'Missing'}
-                            </div>
-                            {!line.validation.dose_valid && (
-                              <div style={{ fontSize: '0.68rem', color: '#fbbf24', marginTop: 4 }}>
-                                {line.validation.dose_flag}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Frequency */}
-                          <div
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.04)',
-                              borderRadius: 8,
-                              padding: '8px 12px',
-                              border: !line.validation.freq_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)', textTransform: 'uppercase' }}>Frequency</div>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginTop: 2 }}>
-                              {line.final_freq || line.validation.freq_standardized || line.freq_raw || 'Missing'}
-                            </div>
-                            {!line.validation.freq_valid && (
-                              <div style={{ fontSize: '0.68rem', color: '#fbbf24', marginTop: 4 }}>
-                                {line.validation.freq_flag}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Duration */}
-                          <div
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.04)',
-                              borderRadius: 8,
-                              padding: '8px 12px',
-                              border: !line.validation.duration_valid ? '1px solid var(--yellow-border)' : '1px solid var(--bg-card-border)',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-sub)', textTransform: 'uppercase' }}>Duration</div>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginTop: 2 }}>
-                              {line.final_duration || line.validation.duration_standardized || line.duration_raw || 'Missing'}
-                            </div>
-                            {!line.validation.duration_valid && (
-                              <div style={{ fontSize: '0.68rem', color: '#fbbf24', marginTop: 4 }}>
-                                {line.validation.duration_flag}
-                              </div>
-                            )}
+                            ))}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Step 4 & 9: One-Click Fix Pills (Top 3 Candidates) */}
-                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-sub)', fontWeight: 600 }}>ONE-CLICK FIX:</span>
-                          {line.top_candidates?.map((cand, cIdx) => (
+                      {/* Inline Pharmacist Modification Drawer */}
+                      {isEditing && (
+                        <div
+                          style={{
+                            marginTop: 20,
+                            padding: '20px',
+                            borderRadius: 12,
+                            background: 'rgba(15, 23, 42, 0.95)',
+                            border: '1px solid rgba(6, 182, 212, 0.35)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Pencil size={16} color="#06b6d4" />
+                              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f8fafc' }}>
+                                Pharmacist Manual Verification & Override
+                              </h4>
+                            </div>
                             <button
-                              key={cIdx}
-                              id={`one-click-pill-${line.line_id}-${cand.brand_name}`}
                               className="btn btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              onClick={() => setEditingLineId(null)}
+                            >
+                              <X size={14} /> Cancel
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 14 }}>
+                            {/* Search Drug */}
+                            <div style={{ position: 'relative' }}>
+                              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-sub)', marginBottom: 4, fontWeight: 700 }}>
+                                MEDICATION BRAND NAME
+                              </label>
+                              <input
+                                type="text"
+                                value={customForm.drug}
+                                onChange={(e) => {
+                                  setCustomForm({ ...customForm, drug: e.target.value });
+                                  handleDrugSearch(e.target.value);
+                                }}
+                                placeholder="Type drug name..."
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  borderRadius: 8,
+                                  color: '#ffffff',
+                                  fontSize: '0.85rem',
+                                  outline: 'none',
+                                }}
+                              />
+                              {searchResults.length > 0 && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    background: '#0f172a',
+                                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                                    borderRadius: 8,
+                                    marginTop: 4,
+                                    zIndex: 50,
+                                    maxHeight: 180,
+                                    overflowY: 'auto',
+                                    boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
+                                  }}
+                                >
+                                  {searchResults.map((d, dIdx) => (
+                                    <div
+                                      key={dIdx}
+                                      style={{
+                                        padding: '8px 12px',
+                                        fontSize: '0.8rem',
+                                        cursor: 'pointer',
+                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                      }}
+                                      onMouseDown={() => {
+                                        setCustomForm({ ...customForm, drug: d.brand_name });
+                                        setSearchResults([]);
+                                      }}
+                                    >
+                                      <strong>{d.brand_name}</strong> ({d.generic_name})
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Dose Input */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-sub)', marginBottom: 4, fontWeight: 700 }}>
+                                DOSE / STRENGTH
+                              </label>
+                              <input
+                                type="text"
+                                value={customForm.dose}
+                                onChange={(e) => setCustomForm({ ...customForm, dose: e.target.value })}
+                                placeholder="e.g. 500mg, 10ml"
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  borderRadius: 8,
+                                  color: '#ffffff',
+                                  fontSize: '0.85rem',
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+
+                            {/* Frequency Input */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-sub)', marginBottom: 4, fontWeight: 700 }}>
+                                FREQUENCY
+                              </label>
+                              <input
+                                type="text"
+                                value={customForm.freq}
+                                onChange={(e) => setCustomForm({ ...customForm, freq: e.target.value })}
+                                placeholder="e.g. 1-0-1, OD, TDS"
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  borderRadius: 8,
+                                  color: '#ffffff',
+                                  fontSize: '0.85rem',
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+
+                            {/* Duration Input */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-sub)', marginBottom: 4, fontWeight: 700 }}>
+                                DURATION
+                              </label>
+                              <input
+                                type="text"
+                                value={customForm.duration}
+                                onChange={(e) => setCustomForm({ ...customForm, duration: e.target.value })}
+                                placeholder="e.g. 5 days, 1 week"
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  borderRadius: 8,
+                                  color: '#ffffff',
+                                  fontSize: '0.85rem',
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Pharmacist Notes */}
+                          <div style={{ marginBottom: 16 }}>
+                            <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-sub)', marginBottom: 4, fontWeight: 700 }}>
+                              CLINICAL AUDIT JUSTIFICATION
+                            </label>
+                            <input
+                              type="text"
+                              value={customForm.notes}
+                              onChange={(e) => setCustomForm({ ...customForm, notes: e.target.value })}
+                              placeholder="Clinical rationale for override..."
                               style={{
-                                padding: '4px 10px',
-                                fontSize: '0.78rem',
-                                borderRadius: 9999,
-                                background:
-                                  (line.final_drug || line.selected_candidate?.brand_name) === cand.brand_name
-                                    ? 'rgba(6, 182, 212, 0.2)'
-                                    : 'rgba(255, 255, 255, 0.05)',
-                                borderColor:
-                                  (line.final_drug || line.selected_candidate?.brand_name) === cand.brand_name
-                                    ? '#06b6d4'
-                                    : 'rgba(255, 255, 255, 0.1)',
+                                width: '100%',
+                                padding: '8px 12px',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                borderRadius: 8,
+                                color: '#ffffff',
+                                fontSize: '0.85rem',
+                                outline: 'none',
                               }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => setEditingLineId(null)}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="btn btn-success"
                               onClick={() => {
                                 handleConfirmLine(line.line_id, {
-                                  final_drug: cand.brand_name,
-                                  final_dose: line.final_dose || line.dose_raw,
-                                  final_freq: line.final_freq || line.freq_raw,
-                                  final_duration: line.final_duration || line.duration_raw,
+                                  final_drug: customForm.drug || line.final_drug,
+                                  final_dose: customForm.dose || line.final_dose,
+                                  final_freq: customForm.freq || line.final_freq,
+                                  final_duration: customForm.duration || line.final_duration,
                                   corrected_by: 'pharmacist',
-                                  notes: `Selected candidate #${cIdx + 1} from top-3 suggestions`,
+                                  notes: customForm.notes || 'Pharmacist verified & confirmed override',
                                 });
                               }}
                             >
-                              {cand.brand_name} ({(cand.combined_score * 100).toFixed(0)}%)
+                              Save & Sign Line
                             </button>
-                          ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
-
-                    {/* Inline Pharmacist Edit Drawer */}
-                    {isEditing && (
-                      <div
-                        style={{
-                          marginTop: 18,
-                          padding: 16,
-                          borderRadius: 12,
-                          background: 'rgba(15, 23, 42, 0.95)',
-                          border: '1px solid rgba(6, 182, 212, 0.3)',
-                        }}
-                      >
-                        <h5 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: 12, color: '#38bdf8' }}>
-                          Pharmacist Manual Prescription Correction
-                        </h5>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
-                          {/* Searchable Medicine */}
-                          <div style={{ position: 'relative' }}>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', display: 'block', marginBottom: 4 }}>
-                              Medicine Name (Search Drug Catalog)
-                            </label>
-                            <input
-                              type="text"
-                              value={customForm.drug}
-                              onChange={(e) => {
-                                setCustomForm({ ...customForm, drug: e.target.value });
-                                handleDrugSearch(e.target.value);
-                              }}
-                              placeholder="e.g. Augmentin, Celebrex..."
-                              style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 8,
-                                background: '#1e293b',
-                                border: '1px solid #334155',
-                                color: '#ffffff',
-                                fontSize: '0.85rem',
-                              }}
-                            />
-                            {searchResults.length > 0 && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  top: '100%',
-                                  left: 0,
-                                  right: 0,
-                                  background: '#0f172a',
-                                  border: '1px solid #334155',
-                                  borderRadius: 8,
-                                  zIndex: 20,
-                                  maxHeight: 180,
-                                  overflowY: 'auto',
-                                  boxShadow: '0 10px 20px rgba(0,0,0,0.5)',
-                                }}
-                              >
-                                {searchResults.map((r, rIdx) => (
-                                  <div
-                                    key={rIdx}
-                                    style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #1e293b', fontSize: '0.8rem' }}
-                                    onClick={() => {
-                                      setCustomForm({ ...customForm, drug: r.brand_name });
-                                      setSearchResults([]);
-                                    }}
-                                  >
-                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>{r.brand_name}</span>{' '}
-                                    <span style={{ color: 'var(--text-sub)' }}>({r.generic_name})</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Dose */}
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', display: 'block', marginBottom: 4 }}>
-                              Dose / Strength
-                            </label>
-                            <input
-                              type="text"
-                              value={customForm.dose}
-                              onChange={(e) => setCustomForm({ ...customForm, dose: e.target.value })}
-                              placeholder="e.g. 625mg, 200mg"
-                              style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 8,
-                                background: '#1e293b',
-                                border: '1px solid #334155',
-                                color: '#ffffff',
-                                fontSize: '0.85rem',
-                              }}
-                            />
-                          </div>
-
-                          {/* Frequency */}
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', display: 'block', marginBottom: 4 }}>
-                              Frequency
-                            </label>
-                            <input
-                              type="text"
-                              value={customForm.freq}
-                              onChange={(e) => setCustomForm({ ...customForm, freq: e.target.value })}
-                              placeholder="e.g. 1-0-1, OD, TDS"
-                              style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 8,
-                                background: '#1e293b',
-                                border: '1px solid #334155',
-                                color: '#ffffff',
-                                fontSize: '0.85rem',
-                              }}
-                            />
-                          </div>
-
-                          {/* Duration */}
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: 'var(--text-sub)', display: 'block', marginBottom: 4 }}>
-                              Duration
-                            </label>
-                            <input
-                              type="text"
-                              value={customForm.duration}
-                              onChange={(e) => setCustomForm({ ...customForm, duration: e.target.value })}
-                              placeholder="e.g. 5d, 7 days"
-                              style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 8,
-                                background: '#1e293b',
-                                border: '1px solid #334155',
-                                color: '#ffffff',
-                                fontSize: '0.85rem',
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                          <button className="btn btn-secondary" onClick={() => setEditingLineId(null)}>
-                            Cancel
-                          </button>
-                          <button
-                            id={`btn-save-edit-${line.line_id}`}
-                            className="btn btn-primary"
-                            onClick={() => {
-                              handleConfirmLine(line.line_id, {
-                                final_drug: customForm.drug,
-                                final_dose: customForm.dose,
-                                final_freq: customForm.freq,
-                                final_duration: customForm.duration,
-                                corrected_by: 'pharmacist',
-                                notes: 'Manual pharmacist correction from drawer',
-                              });
-                            }}
-                          >
-                            Save & Verify Line
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </section>
+          </div>
         )}
       </main>
 
-      {/* Slide 7 Verified Performance Modal */}
-      {showBenchmarkModal && (
-        <div className="modal-overlay" onClick={() => setShowBenchmarkModal(false)}>
+      {/* Verified Electronic Dispense Modal */}
+      {showDispenseModal && (
+        <div className="modal-overlay" onClick={() => setShowDispenseModal(false)}>
           <div
             className="glass-panel"
-            style={{ maxWidth: 680, width: '100%', padding: '28px', background: '#0f172a' }}
+            style={{ maxWidth: 640, width: '100%', padding: '32px', background: '#0b1120' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <BarChart3 size={24} color="#06b6d4" />
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Slide 7 Benchmark Report</h3>
-              </div>
-              <button
-                className="btn btn-secondary"
-                style={{ padding: '4px 8px', borderRadius: '50%' }}
-                onClick={() => setShowBenchmarkModal(false)}
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: '50%',
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px',
+                  color: '#10b981',
+                }}
               >
-                ✕
-              </button>
+                <CheckCircle2 size={36} />
+              </div>
+              <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc' }}>
+                Prescription Verified & Approved for Dispense
+              </h3>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                All medication lines have passed clinical safety checks and look-alike verification.
+              </p>
             </div>
 
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 20 }}>
-              Verified test numbers across synthetic doctor prescriptions benchmark including clean, messy cursive, look-alike confusable pairs, and bad camera shots.
-            </p>
-
-            {benchmarkMetrics ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Top-1 Drug Recognition</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', marginTop: 4 }}>
-                    {benchmarkMetrics.top_1_drug_accuracy_percent}%
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Exact match on first candidate</div>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Top-3 Drug Recognition</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#06b6d4', marginTop: 4 }}>
-                    {benchmarkMetrics.top_3_drug_accuracy_percent}%
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Correct drug in 3 guesses</div>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Look-Alike Hazard Recall</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f59e0b', marginTop: 4 }}>
-                    {benchmarkMetrics.lookalike_hazard_detection_rate_percent}%
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Confusable pairs flagged</div>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Clinical Field Accuracy</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a855f7', marginTop: 4 }}>
-                    {benchmarkMetrics.overall_field_accuracy_percent}%
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Dose + Frequency + Duration</div>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Pharmacist Review Time</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
-                    {benchmarkMetrics.average_pharmacist_review_seconds}s
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Down from 2-3 minutes manual</div>
-                </div>
-
-                <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)' }}>Photo QC Rejection Rate</div>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f43f5e', marginTop: 4 }}>
-                    {benchmarkMetrics.qc_rejection_rate_percent}%
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Filtered blur, dark & glare</div>
-                </div>
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 12,
+                padding: '16px 20px',
+                marginBottom: 24,
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: '0.82rem' }}>
+                <span style={{ color: 'var(--text-sub)' }}>Prescription Number:</span>
+                <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8', fontWeight: 700 }}>
+                  #{activePrescription?.prescription_id}
+                </span>
               </div>
-            ) : (
-              <p>Loading benchmark data...</p>
-            )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: '0.82rem' }}>
+                <span style={{ color: 'var(--text-sub)' }}>Approved Lines:</span>
+                <span style={{ color: '#10b981', fontWeight: 700 }}>{activePrescription?.lines?.length} of {activePrescription?.lines?.length} Verified</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                <span style={{ color: 'var(--text-sub)' }}>Pharmacist Signature:</span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>LIC# IN-PHARM-88219 (Logged to Audit Table)</span>
+              </div>
+            </div>
 
-            <div style={{ marginTop: 20, textAlign: 'right' }}>
-              <button className="btn btn-primary" onClick={() => setShowBenchmarkModal(false)}>
-                Done
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowDispenseModal(false)}
+              >
+                Close
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setShowDispenseModal(false);
+                  setActivePrescription(null);
+                }}
+              >
+                Proceed to Next Prescription
               </button>
             </div>
           </div>
@@ -1159,12 +1440,12 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setSelectedCropPreview(null)}>
           <div
             className="glass-panel"
-            style={{ padding: 16, background: '#ffffff', borderRadius: 16, maxWidth: 800 }}
+            style={{ padding: 20, background: '#ffffff', borderRadius: 16, maxWidth: 840 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <img src={selectedCropPreview} alt="Zoomed Crop" style={{ maxWidth: '100%', maxHeight: '70vh' }} />
-            <div style={{ marginTop: 12, textAlign: 'right' }}>
-              <button className="btn btn-secondary" style={{ color: '#000' }} onClick={() => setSelectedCropPreview(null)}>
+            <img src={selectedCropPreview} alt="Zoomed Segment" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain' }} />
+            <div style={{ marginTop: 14, textAlign: 'right' }}>
+              <button className="btn btn-secondary" style={{ color: '#000', borderColor: '#cbd5e1' }} onClick={() => setSelectedCropPreview(null)}>
                 Close Preview
               </button>
             </div>
@@ -1172,7 +1453,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer */}
+      {/* Clinical Workstation Footer */}
       <footer
         style={{
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
@@ -1180,9 +1461,10 @@ export default function App() {
           textAlign: 'center',
           fontSize: '0.78rem',
           color: 'var(--text-sub)',
+          background: 'rgba(8, 13, 26, 0.6)',
         }}
       >
-        MedMatch Rx · Clinical Pharmacist Decision Support System · Google DeepMind Build Plan
+        MedMatch Rx™ · Hospital Clinical Pharmacist Ingestion Workstation · NLEM Pharmacopeia Verified · Real-Time LASA Prevention
       </footer>
     </div>
   );
