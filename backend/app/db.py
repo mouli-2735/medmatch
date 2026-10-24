@@ -653,6 +653,14 @@ def verify_user(email: str) -> bool:
     conn.close()
     return success
 
+def update_user_verification(user_id: str, is_verified: bool = True) -> bool:
+    conn = get_connection()
+    with conn:
+        cur = conn.execute("UPDATE users SET is_verified = ? WHERE id = ?", (1 if is_verified else 0, user_id))
+        success = cur.rowcount > 0
+    conn.close()
+    return success
+
 def update_user_password(user_id: str, new_password_hash: str) -> bool:
     conn = get_connection()
     with conn:
