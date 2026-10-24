@@ -1181,15 +1181,34 @@ export default function App() {
                     {activePrescription.lines.map((line) => {
                       const isHovered = hoveredLineId === line.line_id;
                       if (!isHovered) return null;
+                      const hasBbox = line.bbox && line.bbox.length === 4;
+                      let top = `${20 + (line.line_id - 1) * 22}%`;
+                      let left = '8%';
+                      let width = '84%';
+                      let height = '18%';
+                      if (hasBbox) {
+                        const b = line.bbox;
+                        if (Math.max(...b) <= 1000) {
+                          top = `${b[0] / 10}%`;
+                          left = `${b[1] / 10}%`;
+                          height = `${Math.max(3, (b[2] - b[0]) / 10)}%`;
+                          width = `${Math.max(10, (b[3] - b[1]) / 10)}%`;
+                        } else {
+                          top = `${(b[1] / 1600) * 100}%`;
+                          left = `${(b[0] / 1200) * 100}%`;
+                          height = `${Math.max(3, ((b[3] - b[1]) / 1600) * 100)}%`;
+                          width = `${Math.max(10, ((b[2] - b[0]) / 1200) * 100)}%`;
+                        }
+                      }
                       return (
                         <div
                           key={line.line_id}
                           style={{
                             position: 'absolute',
-                            left: '8%',
-                            right: '8%',
-                            top: `${20 + (line.line_id - 1) * 22}%`,
-                            height: '18%',
+                            left,
+                            top,
+                            width,
+                            height,
                             border: '2px solid #06b6d4',
                             background: 'rgba(6, 182, 212, 0.2)',
                             boxShadow: '0 0 20px #06b6d4',
