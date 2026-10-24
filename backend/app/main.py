@@ -1,9 +1,11 @@
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, Request, Header
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query, Request, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -11,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.config import (
     PORT, HOST, DATA_DIR, DRUGS_CSV_PATH,
     LOOKALIKES_CSV_PATH, DB_PATH, UPLOADS_DIR, CROPS_DIR,
-    ALLOWED_ORIGINS, MAX_UPLOAD_BYTES, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES
+    ALLOWED_ORIGINS, MAX_UPLOAD_BYTES, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES,
+    LOGIN_OTP_REQUIRED
 )
 from app.db import (
     init_db,
@@ -20,7 +23,26 @@ from app.db import (
     record_correction,
     record_confirmation,
     batch_confirm_prescription,
-    get_connection
+    get_connection,
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    verify_user,
+    update_user_password,
+    update_user_verification
+)
+from app.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    SESSION_COOKIE_NAME,
+    require_user,
+    get_current_user_optional,
+    issue_and_send_otp,
+    verify_submitted_otp,
+    check_and_record_rate_limit,
+    MAX_HOURLY_OTPS,
+    RESEND_COOLDOWN_SECONDS
 )
 from app.pipeline.schema import (
     PrescriptionResponse,
@@ -61,9 +83,20 @@ app.add_middleware(
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 CROPS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount static asset endpoints
-app.mount("/static/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
-app.mount("/static/crops", StaticFiles(directory=str(CROPS_DIR)), name="crops")
+# Authenticated file routes replacing plain StaticFiles mounts
+@app.get("/static/uploads/{filename:path}")
+async def serve_upload_file(filename: str, current_user: Dict[str, Any] = Depends(require_user)):
+    file_path = (UPLOADS_DIR / filename).resolve()
+    if not str(file_path).startswith(str(UPLOADS_DIR.resolve())) or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Upload file not found.")
+    return FileResponse(file_path)
+
+@app.get("/static/crops/{filename:path}")
+async def serve_crop_file(filename: str, current_user: Dict[str, Any] = Depends(require_user)):
+    file_path = (CROPS_DIR / filename).resolve()
+    if not str(file_path).startswith(str(CROPS_DIR.resolve())) or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Crop file not found.")
+    return FileResponse(file_path)
 
 TESTSET_DIR = Path(__file__).resolve().parent.parent.parent / "testset"
 TESTSET_IMAGES_DIR = TESTSET_DIR / "images"
@@ -101,10 +134,300 @@ async def health_check():
         "database": str(DB_PATH)
     }
 
+# ==========================================
+# Authentication Schemas & Endpoints
+# ==========================================
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+class RegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., min_length=3, max_length=150)
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: Optional[str] = None
+    role: str = "pharmacist"
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6)
+
+class ResendOtpRequest(BaseModel):
+    email: str
+    purpose: str = "verify"
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginVerifyOtpRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6)
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: Optional[str] = None
+
+@app.post("/api/auth/register")
+async def register(payload: RegisterRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_and_record_rate_limit(f"reg_ip:{client_ip}", max_attempts=15, window_seconds=900):
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Please wait.")
+
+    norm_email = payload.email.lower().strip()
+    if not EMAIL_REGEX.match(norm_email):
+        raise HTTPException(status_code=400, detail="Invalid email address format.")
+
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
+    if payload.confirm_password is not None and payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+
+    # Check existing user
+    existing = get_user_by_email(norm_email)
+    if existing:
+        if existing["is_verified"]:
+            # Generic response to avoid revealing registered email
+            return {
+                "status": "pending_verification",
+                "message": "If this email is eligible, a 6-digit verification code has been sent.",
+                "email": norm_email
+            }
+        else:
+            # Unverified user resubmitting: update password and send fresh OTP
+            pwd_hash = hash_password(payload.password)
+            update_user_password(existing["id"], pwd_hash)
+            success, msg = issue_and_send_otp(existing["id"], norm_email, purpose="verify")
+            if not success:
+                raise HTTPException(status_code=429, detail=msg)
+            return {
+                "status": "pending_verification",
+                "message": "A 6-digit verification code has been sent to your email.",
+                "email": norm_email
+            }
+
+    pwd_hash = hash_password(payload.password)
+    new_user = create_user(
+        name=payload.name,
+        email=norm_email,
+        password_hash=pwd_hash,
+        role=payload.role or "pharmacist",
+        is_verified=False
+    )
+    success, msg = issue_and_send_otp(new_user["id"], norm_email, purpose="verify")
+    if not success:
+        raise HTTPException(status_code=429, detail=msg)
+
+    return {
+        "status": "pending_verification",
+        "message": "Registration submitted. A 6-digit verification code has been sent to your email.",
+        "email": norm_email
+    }
+
+@app.post("/api/auth/verify-otp")
+async def verify_otp(payload: VerifyOtpRequest, response: Response):
+    norm_email = payload.email.lower().strip()
+    success, msg, _ = verify_submitted_otp(norm_email, payload.otp, purpose="verify")
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    user = get_user_by_email(norm_email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+
+    verify_user(norm_email)
+    user["is_verified"] = 1
+
+    token = create_access_token(user["id"], user["email"], user["role"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=3600,
+        path="/"
+    )
+    return {
+        "status": "success",
+        "message": "Account successfully verified.",
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"]
+        }
+    }
+
+@app.post("/api/auth/resend-otp")
+async def resend_otp(payload: ResendOtpRequest, request: Request):
+    norm_email = payload.email.lower().strip()
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_and_record_rate_limit(f"resend_ip:{client_ip}", max_attempts=20, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please wait.")
+
+    user = get_user_by_email(norm_email)
+    purpose = payload.purpose or "verify"
+    if user:
+        success, msg = issue_and_send_otp(user["id"], norm_email, purpose=purpose)
+        if not success:
+            raise HTTPException(status_code=429, detail=msg)
+    return {
+        "status": "success",
+        "message": "If the email is valid, a new verification code has been sent."
+    }
+
+@app.post("/api/auth/login")
+async def login(payload: LoginRequest, request: Request, response: Response):
+    client_ip = request.client.host if request.client else "unknown"
+    norm_email = payload.email.lower().strip()
+
+    if not check_and_record_rate_limit(f"login_ip:{client_ip}", max_attempts=15, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many login attempts from this network. Please wait.")
+    if not check_and_record_rate_limit(f"login_email:{norm_email}", max_attempts=6, window_seconds=900):
+        raise HTTPException(status_code=429, detail="Too many failed login attempts for this account. Please wait 15 minutes.")
+
+    user = get_user_by_email(norm_email)
+    if not user or not verify_password(user["password_hash"], payload.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if not user["is_verified"]:
+        raise HTTPException(status_code=403, detail="Account is not verified. Please verify your email first.")
+
+    if LOGIN_OTP_REQUIRED:
+        success, msg = issue_and_send_otp(user["id"], norm_email, purpose="login")
+        if not success:
+            raise HTTPException(status_code=429, detail=msg)
+        return {
+            "status": "otp_required",
+            "otp_required": True,
+            "email": norm_email,
+            "message": "A login verification code has been sent to your email."
+        }
+
+    token = create_access_token(user["id"], user["email"], user["role"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=3600,
+        path="/"
+    )
+    return {
+        "status": "success",
+        "otp_required": False,
+        "message": "Login successful.",
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"]
+        }
+    }
+
+@app.post("/api/auth/login-verify-otp")
+async def login_verify_otp(payload: LoginVerifyOtpRequest, response: Response):
+    norm_email = payload.email.lower().strip()
+    success, msg, _ = verify_submitted_otp(norm_email, payload.otp, purpose="login")
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    user = get_user_by_email(norm_email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+
+    if not user["is_verified"]:
+        raise HTTPException(status_code=403, detail="Account is not verified.")
+
+    token = create_access_token(user["id"], user["email"], user["role"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=3600,
+        path="/"
+    )
+    return {
+        "status": "success",
+        "message": "Login successful.",
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"]
+        }
+    }
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not check_and_record_rate_limit(f"fp_ip:{client_ip}", max_attempts=15, window_seconds=3600):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please wait.")
+
+    norm_email = payload.email.lower().strip()
+    user = get_user_by_email(norm_email)
+    if user and user["is_verified"]:
+        issue_and_send_otp(user["id"], norm_email, purpose="reset")
+
+    return {
+        "status": "success",
+        "message": "If that email address is in our database, we will send you a password reset code."
+    }
+
+@app.post("/api/auth/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    norm_email = payload.email.lower().strip()
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters long.")
+
+    if payload.confirm_password is not None and payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+
+    success, msg, _ = verify_submitted_otp(norm_email, payload.otp, purpose="reset")
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    user = get_user_by_email(norm_email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+
+    new_hash = hash_password(payload.new_password)
+    update_user_password(user["id"], new_hash)
+
+    return {
+        "status": "success",
+        "message": "Password reset successful. Please log in with your new password."
+    }
+
+@app.get("/api/auth/me")
+async def get_me(current_user: Dict[str, Any] = Depends(require_user)):
+    return {
+        "user": {
+            "id": current_user["id"],
+            "name": current_user["name"],
+            "email": current_user["email"],
+            "role": current_user["role"]
+        }
+    }
+
+@app.post("/api/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    return {"status": "success", "message": "Logged out successfully."}
+
 @app.post("/api/prescriptions/upload", response_model=PrescriptionResponse)
 async def upload_prescription(
     file: UploadFile = File(...),
-    rotation: Optional[int] = Form(None)
+    rotation: Optional[int] = Form(None),
+    current_user: Dict[str, Any] = Depends(require_user)
 ):
     """
     Step 8 & 9: Secure upload endpoint.
@@ -174,7 +497,7 @@ async def upload_prescription(
     return result
 
 @app.get("/api/prescriptions/{prescription_id}")
-def get_prescription(prescription_id: str):
+def get_prescription(prescription_id: str, current_user: Dict[str, Any] = Depends(require_user)):
     """Fetch stored prescription details, lines, corrections, and audit history"""
     rx = get_prescription_by_id(prescription_id)
     if not rx:
@@ -182,7 +505,7 @@ def get_prescription(prescription_id: str):
     return rx
 
 @app.get("/api/prescriptions")
-def list_prescriptions(limit: int = Query(30, ge=1, le=100)):
+def list_prescriptions(limit: int = Query(30, ge=1, le=100), current_user: Dict[str, Any] = Depends(require_user)):
     """List recent prescriptions for pharmacist verification queue"""
     conn = get_connection()
     cur = conn.execute("SELECT * FROM prescriptions ORDER BY created_at DESC LIMIT ?", (limit,))
@@ -207,7 +530,8 @@ def confirm_or_correct_line(
     prescription_id: str,
     line_id: int,
     payload: Optional[ConfirmLinePayload] = None,
-    x_pharmacist_pin: Optional[str] = Header(None, alias="X-Pharmacist-PIN")
+    x_pharmacist_pin: Optional[str] = Header(None, alias="X-Pharmacist-PIN"),
+    current_user: Dict[str, Any] = Depends(require_user)
 ):
     """
     Step 7: Confirm or correct a prescription line item with server-side safety enforcement.
@@ -215,7 +539,7 @@ def confirm_or_correct_line(
     1. A line flagged RED cannot be directly confirmed without explicit pharmacist correction values.
     2. A line with an active ISMP LASA alert cannot be confirmed without explicit acknowledgment (lasa_acknowledged=True).
     3. Unreadable or missing drug names cannot be silently confirmed.
-    4. Records the designated pharmacist identifier (with PIN verification when PHARMACIST_PIN is configured).
+    4. Attributed directly to authenticated user (name + email).
     """
     # Verify pharmacist PIN if configured in environment
     env_pin = os.getenv("PHARMACIST_PIN", "").strip()
@@ -252,6 +576,9 @@ def confirm_or_correct_line(
             detail=f"Line {line_id} has an active ISMP LASA warning ('{suggested_drug}' confusable with '{paired_drug}'). Confirmation requires explicit pharmacist acknowledgment."
         )
 
+    # Actor identity strictly sourced from authenticated user session
+    actor = f"{current_user['name']} ({current_user['email']})"
+
     # Determine if this is an explicit correction or a direct confirmation
     is_correction = bool(payload and payload.final_drug and payload.final_drug.strip())
     if is_correction:
@@ -263,7 +590,7 @@ def confirm_or_correct_line(
             line_id=line_id,
             original=suggested_drug or "unreadable",
             final_val=payload.model_dump(),
-            user=payload.corrected_by or payload.confirmed_by or "pharmacist",
+            user=actor,
             notes=payload.notes or "Pharmacist correction submitted",
             lasa_acknowledged=lasa_ack
         )
@@ -296,7 +623,6 @@ def confirm_or_correct_line(
             "final_duration": std_dur
         }
         
-        actor = (payload.confirmed_by if payload else "pharmacist") or "pharmacist"
         notes = (payload.notes if payload else "") or ""
 
         record_confirmation(
@@ -314,13 +640,18 @@ def confirm_or_correct_line(
         }
 
 @app.post("/api/prescriptions/{prescription_id}/confirm-all")
-def confirm_all_lines(prescription_id: str, request: Optional[ConfirmLineRequest] = None):
+def confirm_all_lines(
+    prescription_id: str,
+    request: Optional[ConfirmLineRequest] = None,
+    current_user: Dict[str, Any] = Depends(require_user)
+):
     """
     Validates and batch-confirms all eligible lines for a prescription.
     Server-side rule: Blocks if ANY line is flagged RED or has an unacknowledged LASA alert!
+    Attributed directly to authenticated user.
     """
-    confirmed_by = (request.confirmed_by if request else "pharmacist") or "pharmacist"
-    success, message, line_ids = batch_confirm_prescription(prescription_id, confirmed_by=confirmed_by)
+    actor = f"{current_user['name']} ({current_user['email']})"
+    success, message, line_ids = batch_confirm_prescription(prescription_id, confirmed_by=actor)
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
@@ -331,7 +662,10 @@ def confirm_all_lines(prescription_id: str, request: Optional[ConfirmLineRequest
     }
 
 @app.get("/api/drugs/search")
-async def search_drugs(q: str = Query(..., min_length=2)):
+async def search_drugs(
+    q: str = Query(..., min_length=2),
+    current_user: Dict[str, Any] = Depends(require_user)
+):
     """
     Unified medicine search combining:
     1. Local clinical drug catalog (RapidFuzz & Metaphone)
@@ -384,7 +718,7 @@ def get_benchmark_metrics():
     }
 
 @app.get("/api/sample-prescriptions")
-def get_sample_prescriptions():
+def get_sample_prescriptions(current_user: Dict[str, Any] = Depends(require_user)):
     """
     Returns curated demo scenarios for testing different clinical conditions:
     1. Clean Augmentin (Standard handwriting, Green)
@@ -424,7 +758,10 @@ def get_sample_prescriptions():
     ]
 
 @app.post("/api/sample-prescriptions/{sample_id}/load")
-async def load_sample_prescription(sample_id: str):
+async def load_sample_prescription(
+    sample_id: str,
+    current_user: Dict[str, Any] = Depends(require_user)
+):
     """
     Dedicated demo scenario loader.
     Clearly marked as demo mode; runs the pipeline on a sample image.
@@ -448,4 +785,5 @@ async def load_sample_prescription(sample_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host=HOST, port=PORT, reload=True)
+
 
