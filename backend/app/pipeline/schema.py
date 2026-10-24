@@ -13,6 +13,7 @@ class GeminiLineOutput(BaseModel):
     bbox: Optional[List[int]] = Field(default=None, description="[ymin, xmin, ymax, xmax] in 0-1000 scale")
     is_service_error: bool = False
     service_error_detail: Optional[str] = None
+    is_printed_boilerplate: bool = False
 
 class GeminiPageMedicationEntry(BaseModel):
     bbox: Optional[List[int]] = Field(default=None, description="[ymin, xmin, ymax, xmax] in 0-1000 scale")

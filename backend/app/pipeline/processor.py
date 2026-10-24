@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -20,22 +21,27 @@ from app.pipeline.schema import (
 from app.pipeline.image_processing import ImageQualityProcessor
 from app.pipeline.ocr import GeminiOCRReader
 from app.pipeline.matcher import DrugCatalogMatcher
-from app.pipeline.validator import PrescriptionValidator
+from app.pipeline.validator import PrescriptionValidator, RegimenParser
 from app.pipeline.confidence import ConfidenceEvaluator, LookalikeChecker
 from app.pipeline.rxnorm import RxNormClient
+
+logger = logging.getLogger("medmatch.pipeline")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
 
 class MedMatchPipeline:
     """
     End-to-end execution of MedMatch Rx prescription verification pipeline.
-    Integrates all seven project technologies + live RxNorm reference:
-    1. OpenCV — Image quality analysis, auto-orientation, deskewing, and line segmentation.
-    2. Vision AI (Gemini) — Handwritten prescription line transcription.
-    3. RapidFuzz — Orthographic medicine name similarity comparison.
-    4. Metaphone — Phonetic sound-alike similarity comparison.
-    5. ISMP LASA — Look-Alike / Sound-Alike clinical safety hazard detection.
-    6. FastAPI — Orchestration & async endpoint handling.
-    7. SQLite — Audit records, pharmacist confirmations, and corrections.
-    + RxNorm API — Live online medicine-name reference lookup via NLM RxNav.
+    Integrates all stages:
+    1. Optical Quality Audit (blur, dark, glare) with instant retake guidance.
+    2. Document Preprocessing: perspective rectification, deskew, CLAHE contrast & denoising.
+    3. Layout Separation: masks clinic stationery, headers, footers, and patient parameter columns.
+    4. Line Segmentation: isolates discrete handwritten medication order lines.
+    5. Dual-Engine Recognition: Gemini VLM with TrOCR fallback behind config flag.
+    6. Clinical Regimen Parser: extracts dose, frequency, and duration (Indian & Latin patterns).
+    7. Clinical Drug Matcher: RapidFuzz + Metaphone with clinical dose compatibility boost.
+    8. Safety Scoring: heuristic field-level indicators (GREEN / YELLOW / RED) with human confirmation.
     """
     def __init__(self):
         self.quality_processor = ImageQualityProcessor()
@@ -53,24 +59,12 @@ class MedMatchPipeline:
         allow_demo_fallback: bool = False,
         manual_rotation: Optional[int] = None
     ) -> PrescriptionResponse:
-        """
-        Executes pipeline on an uploaded image without hardcoded demo shortcuts:
-        1. OpenCV Image Quality Analysis (blur, dark, glare)
-        2. OpenCV Auto-orient and Deskew (with scale normalization & rotation override)
-        3. OpenCV Line Segmentation / Vision AI Single-Page Bounding Box Extraction
-        4. Vision AI OCR (real multimodal reading)
-        5. RapidFuzz & Metaphone local catalog matching
-        6. Live RxNorm online reference lookup
-        7. Clinical validation of dose, frequency, and duration
-        8. ISMP Look-alike safety check
-        9. Heuristic field-level confidence scoring
-        """
         pid = prescription_id or f"rx_{uuid.uuid4().hex[:8]}"
-        # Never block event loop: run OpenCV read with asyncio.to_thread
+        logger.info(f"[{pid}] Starting processing for '{image_path.name}'")
+
         image_bgr = await asyncio.to_thread(cv2.imread, str(image_path))
-        
         if image_bgr is None:
-            # Handle unreadable image file safely
+            logger.error(f"[{pid}] Failed to read image file '{image_path}'")
             failed_qc = QualityCheckResult(
                 passed=False,
                 is_blurry=False,
@@ -98,9 +92,10 @@ class MedMatchPipeline:
                 created_at=datetime.now(timezone.utc).isoformat()
             )
 
-        # 1. OpenCV Image Quality Check (run in thread)
+        # Stage 1: Optical Quality Audit
         quality = await asyncio.to_thread(self.quality_processor.analyze_quality, image_bgr)
         if not quality.passed:
+            logger.warning(f"[{pid}] Image rejected by optical quality gate: {quality.message}")
             return PrescriptionResponse(
                 prescription_id=pid,
                 original_filename=image_path.name,
@@ -111,11 +106,11 @@ class MedMatchPipeline:
                 status="rejected",
                 all_can_confirm=False,
                 vision_ai_status="operational",
-                vision_ai_message="Image rejected by OpenCV quality gate.",
+                vision_ai_message="Image rejected by OpenCV quality gate. Please retake photo.",
                 created_at=datetime.now(timezone.utc).isoformat()
             )
 
-        # 2. OpenCV Auto-orient and Deskew (run in thread)
+        # Stage 2: Geometric & Contrast Preprocessing (auto-orient, perspective warp, CLAHE, deskew)
         deskewed_img, angle, rot_applied, orient_conf = await asyncio.to_thread(
             self.quality_processor.auto_orient_and_deskew,
             image_bgr,
@@ -126,15 +121,14 @@ class MedMatchPipeline:
         quality.rotation_applied = rot_applied
         quality.orientation_confident = orient_conf
 
-        # 3. Vision AI Single-Page OCR or OpenCV Segmentation Fallback
         crops_out_dir = CROPS_DIR / pid
         crops_out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Encode deskewed image to JPEG bytes for page-level Vision AI
+        # Stage 3 & 4: Layout Separation & Line Segmentation
+        # First attempt: Try Gemini single-page multimodal parse if available
         success_enc, encoded = await asyncio.to_thread(cv2.imencode, ".jpg", deskewed_img)
         page_bytes = encoded.tobytes() if success_enc else b""
 
-        # Run page OCR without blocking event loop
         page_output = await asyncio.to_thread(
             self.ocr_reader.read_prescription_page,
             page_bytes,
@@ -148,7 +142,6 @@ class MedMatchPipeline:
             overall_vision_status = "service_unavailable"
             overall_vision_msg = page_output.service_error_detail
 
-        h_img, w_img = deskewed_img.shape[:2]
         usable_entries = [
             e for e in (page_output.prescriptions or [])
             if e.bbox and len(e.bbox) == 4 and (e.bbox[2] > e.bbox[0]) and (e.bbox[3] > e.bbox[1])
@@ -166,7 +159,7 @@ class MedMatchPipeline:
                 page_output
             )
 
-        # Fallback to OpenCV line segmentation if no usable boxes returned
+        # Stage 4 fallback: Intelligent line segmentation with layout separation
         if not line_items:
             segmented = await asyncio.to_thread(
                 self.quality_processor.segment_lines, deskewed_img, crops_out_dir, pid
@@ -190,13 +183,17 @@ class MedMatchPipeline:
             if crop_reads:
                 read_results = await asyncio.gather(*crop_reads)
                 for crop_filename, bbox, ocr_line in read_results:
+                    # Drop printed boilerplate lines (e.g. phone/email footer, clinic letterhead)
+                    if ocr_line.is_printed_boilerplate:
+                        logger.info(f"[{pid}] Dropping printed boilerplate line: {crop_filename}")
+                        continue
                     if ocr_line.is_service_error and not page_output.is_service_error:
                         overall_vision_status = "service_unavailable"
                         overall_vision_msg = ocr_line.service_error_detail
                     line_items.append((crop_filename, bbox, ocr_line))
 
-        # If no lines found (e.g. blank page): return rejected response
         if not line_items:
+            logger.warning(f"[{pid}] No handwritten medication lines detected.")
             quality.passed = False
             quality.message = "No handwriting found. Retake the photo or crop manually."
             return PrescriptionResponse(
@@ -213,17 +210,37 @@ class MedMatchPipeline:
                 created_at=datetime.now(timezone.utc).isoformat()
             )
 
-        # 4, 5, 6, 7, 8, 9: Process each line item
+        # Stage 6 & 7: Regimen Parsing and Strength-Boosted Matching
         line_prep = []
         for idx, (crop_filename, bbox, ocr_output) in enumerate(line_items):
-            candidates = self.matcher.match_guesses(ocr_output.guesses, top_k=4)
+            # Parse raw text for additional dosage, frequency, or duration tokens
+            combined_text = " ".join(ocr_output.guesses) + f" {ocr_output.dose_raw} {ocr_output.freq_raw} {ocr_output.duration_raw}"
+            parsed_reg = RegimenParser.parse_regimen_from_text(combined_text)
+
+            eff_dose = ocr_output.dose_raw if ocr_output.dose_raw != "unknown" else parsed_reg["dose"]
+            eff_freq = ocr_output.freq_raw if ocr_output.freq_raw != "unknown" else parsed_reg["freq"]
+            eff_dur = ocr_output.duration_raw if ocr_output.duration_raw != "unknown" else parsed_reg["duration"]
+
+            # Match against local Indian drug database with strength compatibility boost
+            candidates = self.matcher.match_guesses(
+                ocr_output.guesses,
+                top_k=3,
+                dose_context=eff_dose
+            )
             selected_cand = candidates[0] if candidates else None
+
             rxnorm_query = selected_cand.brand_name if selected_cand else (
                 ocr_output.guesses[0] if (ocr_output.guesses and ocr_output.guesses[0] != "unreadable") else ""
             )
+
+            # Update ocr_output with parsed regimen
+            ocr_output.dose_raw = eff_dose
+            ocr_output.freq_raw = eff_freq
+            ocr_output.duration_raw = eff_dur
+
             line_prep.append((crop_filename, bbox, ocr_output, candidates, selected_cand, rxnorm_query))
 
-        # Run RxNorm lookups with asyncio.gather and a total 3 s budget
+        # Query RxNorm (capped at 3s timeout for async concurrency)
         async def _safe_rxnorm_lookup(term: str) -> RxNormLookupResult:
             if not term or term.lower() in ["unreadable", "unknown"]:
                 return RxNormLookupResult(
@@ -268,6 +285,7 @@ class MedMatchPipeline:
                 for _, _, _, _, _, q in line_prep
             ]
 
+        # Stage 8: Safety Scoring, Clinical Validation & Output Formatting
         processed_lines: List[ProcessedLine] = []
         all_can_confirm = True
 
@@ -281,7 +299,6 @@ class MedMatchPipeline:
                     message="not found in RxNorm (US database)"
                 )
 
-            # Store original raw OCR extraction for full clinical auditability
             original_ocr_trace = {
                 "raw_guesses": list(ocr_output.guesses),
                 "raw_dose": ocr_output.dose_raw,
@@ -310,10 +327,16 @@ class MedMatchPipeline:
                 service_error_detail=ocr_output.service_error_detail
             )
 
+            # Safety Rule: Every line requires human pharmacist confirmation
             if not confidence.can_confirm:
                 all_can_confirm = False
 
             crop_url = f"/static/crops/{pid}/{crop_filename}"
+
+            # Always display top candidate instead of 'unreadable' if matches exist
+            display_drug = selected_cand.brand_name if selected_cand else (
+                ocr_output.guesses[0] if (ocr_output.guesses and ocr_output.guesses[0] != "unreadable") else "unreadable"
+            )
 
             processed_line = ProcessedLine(
                 line_id=line_id,
@@ -332,14 +355,17 @@ class MedMatchPipeline:
                 confidence=confidence,
                 lasa_acknowledged=False,
                 status="pending",
-                final_drug=selected_cand.brand_name if selected_cand else "unreadable",
+                final_drug=display_drug,
                 final_dose=validation.dose_standardized or ocr_output.dose_raw,
                 final_freq=validation.freq_standardized or ocr_output.freq_raw,
                 final_duration=validation.duration_standardized or ocr_output.duration_raw
             )
             processed_lines.append(processed_line)
+            logger.info(
+                f"[{pid}] Line #{line_id}: drug='{display_drug}' ({confidence.score*100:.1f}% {confidence.level.upper()}), "
+                f"dose='{processed_line.final_dose}', freq='{processed_line.final_freq}', dur='{processed_line.final_duration}'"
+            )
 
-        # If no lines segmented
         if not processed_lines:
             all_can_confirm = False
 
@@ -407,7 +433,6 @@ class MedMatchPipeline:
         allow_demo_fallback: bool = False,
         manual_rotation: Optional[int] = None
     ) -> PrescriptionResponse:
-        """Synchronous wrapper for offline testing and CLI benchmark execution (cannot deadlock)"""
         coro = self.process_prescription_image(
             image_path,
             prescription_id,

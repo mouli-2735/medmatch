@@ -17,6 +17,7 @@ else:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-1.5-flash").strip()
+USE_TROCR = os.getenv("USE_TROCR", "false").lower() in ("true", "1", "yes")
 
 # Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
