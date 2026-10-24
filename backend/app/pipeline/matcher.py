@@ -216,5 +216,5 @@ class DrugCatalogMatcher:
                     phonetic_match_description=best_meta_desc
                 ))
 
-        scored_candidates.sort(key=lambda x: x.combined_score, reverse=True)
+        scored_candidates.sort(key=lambda x: (x.combined_score, x.spelling_score, x.phonetic_score), reverse=True)
         return scored_candidates[:top_k]
