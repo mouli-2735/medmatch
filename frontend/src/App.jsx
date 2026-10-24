@@ -20,15 +20,20 @@ import {
   X,
   Stethoscope,
   History,
-  Maximize2
+  Maximize2,
+  LogOut
 } from 'lucide-react';
 
 import ProperDoctorAvatar3D from './components/ProperDoctorAvatar3D';
 import ThreeDMedicalScene from './components/ThreeDMedicalScene';
+import AuthScreens from './components/AuthScreens';
 
 const API_BASE = '';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [activePrescription, setActivePrescription] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -54,12 +59,55 @@ export default function App() {
   const [lasaAckMap, setLasaAckMap] = useState({});
   const [sampleScenarios, setSampleScenarios] = useState([]);
 
+  // Authenticated API Fetch Helper (credentials: include, 401 redirect)
+  const apiFetch = async (url, options = {}) => {
+    const res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+    });
+    if (res.status === 401) {
+      setCurrentUser(null);
+    }
+    return res;
+  };
+
+  // Check existing session on mount
   React.useEffect(() => {
-    fetch(`${API_BASE}/api/sample-prescriptions`)
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.user) {
+          setCurrentUser(data.user);
+          setPharmacistName(`${data.user.name} (${data.user.role})`);
+        } else {
+          setCurrentUser(null);
+        }
+      })
+      .catch(() => setCurrentUser(null))
+      .finally(() => setAuthChecking(false));
+  }, []);
+
+  // Load sample scenarios when authenticated
+  React.useEffect(() => {
+    if (!currentUser) return;
+    apiFetch(`${API_BASE}/api/sample-prescriptions`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setSampleScenarios(data))
       .catch(() => {});
-  }, []);
+  }, [currentUser]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    setCurrentUser(null);
+    setActivePrescription(null);
+  };
 
   React.useEffect(() => {
     if (theme === 'dark') {
@@ -106,7 +154,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/prescriptions/upload`, {
+      const res = await apiFetch(`${API_BASE}/api/prescriptions/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -150,7 +198,7 @@ export default function App() {
     setUploadError(null);
     setProcessingStage(`Loading sample scenario #${sampleId}...`);
     try {
-      const res = await fetch(`${API_BASE}/api/sample-prescriptions/${sampleId}/load`, {
+      const res = await apiFetch(`${API_BASE}/api/sample-prescriptions/${sampleId}/load`, {
         method: 'POST'
       });
       if (!res.ok) {
@@ -191,7 +239,7 @@ export default function App() {
         lasa_acknowledged: isLasaAck
       };
 
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/lines/${lineId}/confirm`,
         {
           method: 'POST',
@@ -207,7 +255,7 @@ export default function App() {
       }
 
       // Re-fetch updated prescription from server to keep database and UI 100% synchronized
-      const freshRes = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
+      const freshRes = await apiFetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
       if (freshRes.ok) {
         const freshData = await freshRes.json();
         setActivePrescription(freshData);
@@ -244,7 +292,7 @@ export default function App() {
   const handleConfirmAll = async () => {
     if (!activePrescription) return;
     try {
-      const res = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/confirm-all`, {
+      const res = await apiFetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}/confirm-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmed_by: pharmacistName })
@@ -255,7 +303,7 @@ export default function App() {
         return;
       }
 
-      const freshRes = await fetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
+      const freshRes = await apiFetch(`${API_BASE}/api/prescriptions/${activePrescription.prescription_id}`);
       if (freshRes.ok) {
         const freshData = await freshRes.json();
         setActivePrescription(freshData);
@@ -276,7 +324,7 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/drugs/search?q=${encodeURIComponent(query)}`);
+      const res = await apiFetch(`${API_BASE}/api/drugs/search?q=${encodeURIComponent(query)}`);
       if (res.ok) {
         const data = await res.json();
         setSearchResults(data);
@@ -319,6 +367,61 @@ export default function App() {
       transformOrigin: 'center center',
     };
   };
+
+  if (authChecking) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: theme === 'dark' ? '#070b16' : '#08162d',
+          color: '#38bdf8',
+          fontFamily: 'var(--font-sans)',
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div
+            className="pulse-dot"
+            style={{
+              width: 22,
+              height: 22,
+              margin: '0 auto 16px',
+              background: '#06b6d4',
+              boxShadow: '0 0 24px rgba(6, 182, 212, 0.8)',
+            }}
+          />
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              color: '#38bdf8',
+            }}
+          >
+            VERIFYING CLINICAL CREDENTIALS...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div style={{ minHeight: '100vh', position: 'relative' }}>
+        <ThreeDMedicalScene isScanning={false} />
+        <AuthScreens
+          apiBase={API_BASE}
+          onAuthSuccess={(user) => {
+            setCurrentUser(user);
+            setPharmacistName(`${user.name} (${user.role})`);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -428,28 +531,66 @@ export default function App() {
               <span>NLEM & RxNorm ONLINE</span>
             </div>
 
-            {/* Pharmacist Profile Badge */}
+            {/* Authenticated User Profile Badge */}
             <div
               className="glass-pill"
-              style={{ padding: '4px 10px', gap: 6, borderColor: 'rgba(6, 182, 212, 0.3)' }}
-              title="Pharmacist Identity recorded on audit logs & signatures"
+              style={{
+                padding: '5px 12px',
+                gap: 8,
+                borderColor: 'rgba(6, 182, 212, 0.35)',
+                background: 'rgba(6, 182, 212, 0.08)',
+              }}
+              title={`Logged in as ${currentUser?.name} (${currentUser?.email}) - ${currentUser?.role}`}
             >
-              <Stethoscope size={14} color="#06b6d4" />
-              <input
-                type="text"
-                value={pharmacistName}
-                onChange={(e) => setPharmacistName(e.target.value)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#38bdf8',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  width: '160px',
-                  outline: 'none',
-                }}
-              />
+              <Stethoscope size={15} color="#06b6d4" />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span
+                  style={{
+                    color: '#ffffff',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {currentUser?.name || 'Pharmacist'}
+                </span>
+                <span
+                  style={{
+                    color: '#38bdf8',
+                    fontSize: '0.64rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    fontWeight: 600,
+                  }}
+                >
+                  {currentUser?.role || 'pharmacist'}
+                </span>
+              </div>
             </div>
+
+            {/* Logout Button */}
+            <button
+              id="logout-button"
+              className="glass-pill"
+              onClick={handleLogout}
+              style={{
+                cursor: 'pointer',
+                padding: '6px 12px',
+                borderColor: 'rgba(239, 68, 68, 0.35)',
+                color: '#f87171',
+                fontWeight: 700,
+                fontSize: '0.74rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(239, 68, 68, 0.08)',
+                transition: 'all 0.2s',
+              }}
+              title="Sign out of MedMatch Rx"
+            >
+              <LogOut size={13} color="#f87171" />
+              <span>Logout</span>
+            </button>
 
             {/* Theme Toggle Button */}
             <button
