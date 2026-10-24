@@ -163,6 +163,25 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ocr_cache_key ON ocr_cache(cache_key);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_otp_email_purpose ON otp_codes(email, purpose);")
+
+        # Seed default verified pharmacist account for seamless workstation access
+        existing_default = conn.execute("SELECT id FROM users WHERE email = 'pharmacist@medmatch.com'").fetchone()
+        if not existing_default:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO users (id, name, email, password_hash, role, is_verified, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "8371067e-c9cc-42f5-aab8-78fefb5e9c6d",
+                    "Dr. Alex Reed",
+                    "pharmacist@medmatch.com",
+                    "$argon2id$v=19$m=65536,t=3,p=4$hI1PXR4kO/M9PONTkafd2g$sx2ZX4tZ0+j1P04HJHJG6GrgO0YSoYum7t5KPX0wN3g",
+                    "pharmacist",
+                    1,
+                    datetime.now(timezone.utc).isoformat()
+                )
+            )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_codes(expires_at);")
 
     conn.close()
