@@ -64,3 +64,19 @@ CROPS_DIR = UPLOADS_DIR / "crops"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 CROPS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Authentication & Security Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    raise RuntimeError("JWT_SECRET must be at least 32 characters long. Check .env configuration.")
+
+LOGIN_OTP_REQUIRED = os.getenv("LOGIN_OTP_REQUIRED", "false").lower() in ("true", "1", "yes")
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() in ("true", "1", "yes")
+
+# SMTP Email Configuration (STARTTLS port 587)
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@medmatch.com").strip()
+

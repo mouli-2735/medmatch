@@ -1,6 +1,7 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
@@ -105,6 +106,33 @@ def init_db():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'pharmacist',
+                is_verified BOOLEAN NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS otp_codes (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                email TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                code_hash TEXT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                used BOOLEAN NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        """)
+
         # Schema migration checks for existing databases
         rx_table_info = conn.execute("PRAGMA table_info(prescriptions)").fetchall()
         rx_existing_cols = {col["name"] for col in rx_table_info}
@@ -133,6 +161,9 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_prescription_id ON audit_logs(prescription_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_prescriptions_status ON prescriptions(status);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ocr_cache_key ON ocr_cache(cache_key);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_otp_email_purpose ON otp_codes(email, purpose);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_codes(expires_at);")
 
     conn.close()
 
@@ -562,3 +593,159 @@ def get_prescription_by_id(pid: str) -> Optional[Dict[str, Any]]:
         "created_at": rx_row["created_at"],
         "updated_at": rx_row["updated_at"]
     }
+
+# ==========================================
+# User & Authentication Database Helpers
+# ==========================================
+
+def create_user(
+    name: str,
+    email: str,
+    password_hash: str,
+    role: str = "pharmacist",
+    is_verified: bool = False,
+    user_id: Optional[str] = None
+) -> Dict[str, Any]:
+    uid = user_id or str(uuid.uuid4())
+    norm_email = email.lower().strip()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        conn.execute("""
+            INSERT INTO users (id, name, email, password_hash, role, is_verified, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (uid, name.strip(), norm_email, password_hash, role, 1 if is_verified else 0, now_iso))
+    conn.close()
+    return {
+        "id": uid,
+        "name": name.strip(),
+        "email": norm_email,
+        "role": role,
+        "is_verified": is_verified,
+        "created_at": now_iso
+    }
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    if not email:
+        return None
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower().strip(),)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    if not user_id:
+        return None
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+def verify_user(email: str) -> bool:
+    conn = get_connection()
+    with conn:
+        cur = conn.execute("UPDATE users SET is_verified = 1 WHERE email = ?", (email.lower().strip(),))
+        success = cur.rowcount > 0
+    conn.close()
+    return success
+
+def update_user_password(user_id: str, new_password_hash: str) -> bool:
+    conn = get_connection()
+    with conn:
+        cur = conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_password_hash, user_id))
+        success = cur.rowcount > 0
+    conn.close()
+    return success
+
+def create_otp(
+    user_id: Optional[str],
+    email: str,
+    purpose: str,
+    code_hash: str,
+    expires_at_iso: str,
+    otp_id: Optional[str] = None
+) -> str:
+    oid = otp_id or str(uuid.uuid4())
+    norm_email = email.lower().strip()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        conn.execute("""
+            INSERT INTO otp_codes (id, user_id, email, purpose, code_hash, expires_at, attempts, used, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
+        """, (oid, user_id, norm_email, purpose, code_hash, expires_at_iso, now_iso))
+    conn.close()
+    return oid
+
+def get_latest_otp(email: str, purpose: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT * FROM otp_codes
+        WHERE email = ? AND purpose = ?
+        ORDER BY created_at DESC LIMIT 1
+    """, (email.lower().strip(), purpose)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+def increment_otp_attempts(otp_id: str) -> int:
+    conn = get_connection()
+    with conn:
+        conn.execute("UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?", (otp_id,))
+        row = conn.execute("SELECT attempts FROM otp_codes WHERE id = ?", (otp_id,)).fetchone()
+    conn.close()
+    return row["attempts"] if row else 0
+
+def mark_otp_used(otp_id: str) -> bool:
+    conn = get_connection()
+    with conn:
+        cur = conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (otp_id,))
+        success = cur.rowcount > 0
+    conn.close()
+    return success
+
+def count_otps_in_last_hour(email: str) -> int:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT COUNT(*) as cnt FROM otp_codes
+        WHERE email = ? AND created_at >= ?
+    """, (email.lower().strip(), cutoff)).fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+def seconds_since_last_otp(email: str, purpose: Optional[str] = None) -> Optional[float]:
+    conn = get_connection()
+    if purpose:
+        row = conn.execute("""
+            SELECT created_at FROM otp_codes
+            WHERE email = ? AND purpose = ?
+            ORDER BY created_at DESC LIMIT 1
+        """, (email.lower().strip(), purpose)).fetchone()
+    else:
+        row = conn.execute("""
+            SELECT created_at FROM otp_codes
+            WHERE email = ?
+            ORDER BY created_at DESC LIMIT 1
+        """, (email.lower().strip(),)).fetchone()
+    conn.close()
+    if not row or not row["created_at"]:
+        return None
+    try:
+        created_str = row["created_at"]
+        if "T" in created_str:
+            dt = datetime.fromisoformat(created_str)
+        else:
+            dt = datetime.strptime(created_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        diff = (datetime.now(timezone.utc) - dt).total_seconds()
+        return max(0.0, diff)
+    except Exception:
+        return None
+
