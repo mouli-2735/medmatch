@@ -285,10 +285,15 @@ class ImageQualityProcessor:
         # 2. Adaptive thresholding to isolate handwriting ink
         thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)
 
+        # Remove long vertical lines (e.g. clinic pad outer border boxes and table column dividers) that merge lines
+        vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(25, int(h * 0.02))))
+        vert_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, vert_kernel)
+        thresh_clean = cv2.subtract(thresh, vert_lines)
+
         # Horizontal structuring element to bridge words across a line
         k_w = max(15, int(w * 0.04))
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k_w, 4))
-        dilated = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        dilated = cv2.morphologyEx(thresh_clean, cv2.MORPH_CLOSE, kernel)
 
         # Only retain dilated ink inside the paper region (excludes letterhead bands, thumbs, backgrounds)
         region_mask = np.zeros((h, w), dtype=np.uint8)
@@ -297,10 +302,10 @@ class ImageQualityProcessor:
         region_mask[paper_y1 + in_y : paper_y2 - in_y, paper_x1 + in_x : paper_x2 - in_x] = 255
         dilated = cv2.bitwise_and(dilated, dilated, mask=region_mask)
 
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         boxes = []
-        # Filter fragments smaller than ~15% page width or too short (< 15px) or giant blocks
-        min_width = int(w * 0.15)
+        # Filter fragments smaller than ~12% page width or too short (< 15px) or giant blocks
+        min_width = int(w * 0.12)
         min_height = 15
         max_height = int(h * 0.25)
         for c in contours:
